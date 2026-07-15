@@ -1,65 +1,155 @@
-import Image from "next/image";
+import { prisma } from "@/lib/db";
+import { Card, PageTitle, Badge, LinkButton, EmptyState, SectionTitle } from "@/components/ui";
+import { AlertTriangle, Building2, Megaphone, Users, ImageIcon } from "lucide-react";
+import Link from "next/link";
 
-export default function Home() {
+const CAMPAIGN_STATUS_LABELS: Record<string, string> = { planning: "計画中", running: "実施中", closed: "終了" };
+
+export default async function DashboardPage() {
+  const [clients, runningCampaigns, allPosts, blacklistedCount, influencerCount] = await Promise.all([
+    prisma.client.count(),
+    prisma.campaign.findMany({
+      where: { status: "running" },
+      include: {
+        brand: { include: { client: true } },
+        members: { include: { posts: true, influencer: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.post.findMany({
+      include: {
+        campaignInfluencer: {
+          include: {
+            influencer: true,
+            campaign: { include: { brand: { include: { client: true } } } },
+          },
+        },
+      },
+      orderBy: { id: "desc" },
+      take: 500,
+    }),
+    prisma.influencer.count({ where: { isBlacklisted: true } }),
+    prisma.influencer.count(),
+  ]);
+
+  const ctaMissingPosts = allPosts.filter((p) => !p.hasCta);
+  const ngWordPosts = allPosts.filter((p) => p.ngWordHit);
+  const secondaryUseAssets = allPosts.filter((p) => p.secondaryUseOk).length;
+
+  const campaignsByClient = new Map<string, typeof runningCampaigns>();
+  for (const c of runningCampaigns) {
+    const key = c.brand.client.name;
+    if (!campaignsByClient.has(key)) campaignsByClient.set(key, []);
+    campaignsByClient.get(key)!.push(c);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div>
+      <PageTitle
+        title="ダッシュボード"
+        subtitle="進行中キャンペーン(クライアント別)とコンプライアンス警告"
+        action={<LinkButton href="/clients">クライアント一覧へ</LinkButton>}
+      />
+
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">クライアント数</p>
+            <Building2 className="size-4 text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{clients}</p>
+        </Card>
+        <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">実施中施策数</p>
+            <Megaphone className="size-4 text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{runningCampaigns.length}</p>
+        </Card>
+        <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">インフルエンサーストック</p>
+            <Users className="size-4 text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
+            {influencerCount} <span className="text-xs text-red-500 font-normal">(BL: {blacklistedCount})</span>
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        </Card>
+        <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">二次利用可能素材数</p>
+            <ImageIcon className="size-4 text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{secondaryUseAssets}</p>
+        </Card>
+      </div>
+
+      {(ctaMissingPosts.length > 0 || ngWordPosts.length > 0) && (
+        <Card className="mb-6 border-red-300 bg-red-50">
+          <h2 className="font-semibold text-red-800 mb-3 flex items-center gap-1.5">
+            <AlertTriangle className="size-4" /> コンプライアンス警告
+          </h2>
+          <div className="space-y-2 text-sm">
+            {ctaMissingPosts.length > 0 && (
+              <p className="text-red-800">
+                CTA(Amazon誘導)未実装の投稿: <strong>{ctaMissingPosts.length}件</strong>
+              </p>
+            )}
+            {ngWordPosts.length > 0 && (
+              <p className="text-red-800">
+                NGワード検出済の投稿: <strong>{ngWordPosts.length}件</strong>
+              </p>
+            )}
+            <ul className="mt-2 space-y-1">
+              {[...ctaMissingPosts, ...ngWordPosts].slice(0, 8).map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/campaigns/${p.campaignInfluencer.campaignId}/members/${p.campaignInfluencerId}`}
+                    className="underline hover:no-underline"
+                  >
+                    @{p.campaignInfluencer.influencer.username} - {p.campaignInfluencer.campaign.brand.client.name}/
+                    {p.campaignInfluencer.campaign.name}
+                  </Link>{" "}
+                  {!p.hasCta && <Badge color="red">CTA未実装</Badge>}
+                  {p.ngWordHit && <Badge color="red">NG: {p.ngWordHit}</Badge>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
+      )}
+
+      <SectionTitle>進行中キャンペーン(クライアント別)</SectionTitle>
+      {campaignsByClient.size === 0 && (
+        <EmptyState>実施中の施策はまだありません。クライアント/ブランドを登録してキャンペーンを開始してください。</EmptyState>
+      )}
+      <div className="space-y-6">
+        {[...campaignsByClient.entries()].map(([clientName, campaigns]) => (
+          <div key={clientName}>
+            <h3 className="font-medium text-slate-700 mb-2">{clientName}</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {campaigns.map((c) => {
+                const posted = c.members.filter((m) => m.posts.length > 0).length;
+                const secondaryUse = c.members.flatMap((m) => m.posts).filter((p) => p.secondaryUseOk).length;
+                return (
+                  <Card key={c.id}>
+                    <div className="flex items-center justify-between mb-2">
+                      <Link href={`/campaigns/${c.id}`} className="font-semibold hover:underline">
+                        {c.name}
+                      </Link>
+                      <Badge color="blue">{CAMPAIGN_STATUS_LABELS[c.status] ?? c.status}</Badge>
+                    </div>
+                    <p className="text-xs text-slate-500">{c.brand.name}</p>
+                    <p className="text-sm mt-2">
+                      候補 {c.members.length} / 投稿済 {posted} / 二次利用可 {secondaryUse}
+                    </p>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

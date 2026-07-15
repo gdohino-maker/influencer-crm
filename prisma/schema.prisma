@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// クライアント・ブランド階層
+// ============================================
+
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  notes     String?
+  brands    Brand[]
+  createdAt DateTime @default(now())
+}
+
+model Brand {
+  id       Int    @id @default(autoincrement())
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  name        String
+  category    String
+  description String?
+  asin        String?
+  productUrl  String?
+  priceYen    Int?
+
+  targetAgeBands String
+  targetGender   String
+  targetGenres   String
+
+  searchKeyword String
+
+  complianceProfileId Int
+  complianceProfile   ComplianceProfile @relation(fields: [complianceProfileId], references: [id])
+  scoringProfileId    Int
+  scoringProfile      ScoringProfile    @relation(fields: [scoringProfileId], references: [id])
+
+  discoveryKeywords String?
+
+  campaigns Campaign[]
+  createdAt DateTime   @default(now())
+}
+
+model Campaign {
+  id          Int       @id @default(autoincrement())
+  brandId     Int
+  brand       Brand     @relation(fields: [brandId], references: [id])
+  name        String
+  goal        String
+  targetCount Int?
+  budgetYen   Int?
+  startsAt    DateTime?
+  endsAt      DateTime?
+  status      String    @default("planning")
+  members     CampaignInfluencer[]
+  createdAt   DateTime  @default(now())
+}
+
+// ============================================
+// 設定プロファイル
+// ============================================
+
+model ComplianceProfile {
+  id              Int     @id @default(autoincrement())
+  name            String
+  requirePr       Boolean @default(true)
+  requireRelation Boolean @default(true)
+  requireCta      Boolean @default(true)
+  ngWords         String?
+  okWords         String?
+  extraNotes      String?
+  brands          Brand[]
+}
+
+model ScoringProfile {
+  id        Int    @id @default(autoincrement())
+  name      String
+  wAudience Int    @default(30)
+  wGenre    Int    @default(20)
+  wEr       Int    @default(20)
+  wPhoto    Int    @default(15)
+  wNotJaded Int    @default(10)
+  wActivity Int    @default(5)
+  wFollower Int    @default(0)
+  brands    Brand[]
+}
+
+// ============================================
+// インフルエンサー（全社展開マスタ）
+// ============================================
+
+model Influencer {
+  id          Int     @id @default(autoincrement())
+  platform    String
+  username    String
+  url         String
+  displayName String?
+  bio         String?
+
+  followers      Int?
+  postsCount     Int?
+  avgLike        Int?
+  avgComment     Int?
+  engagementRate Float?
+  lastEnrichedAt DateTime?
+
+  ageBand             String?
+  audienceAgeGuess    String?
+  audienceGenderGuess String?
+  genreTags           String?
+  photoQuality        Int?
+  prFrequency         Float?
+
+  isBlacklisted   Boolean @default(false)
+  blacklistReason String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns CampaignInfluencer[]
+
+  @@unique([platform, username])
+}
+
+// ============================================
+// 施策 × インフルエンサー
+// ============================================
+
+model CampaignInfluencer {
+  id           Int        @id @default(autoincrement())
+  campaignId   Int
+  campaign     Campaign   @relation(fields: [campaignId], references: [id])
+  influencerId Int
+  influencer   Influencer @relation(fields: [influencerId], references: [id])
+
+  audienceFit  Int?
+  genreFit     Int?
+  score        Float?
+  excludeFlags String?
+  draftBlockA  String? // AI生成/編集済みのDMブロックA下書き
+
+  status String @default("candidate")
+
+  notes      String?
+  outreaches Outreach[]
+  shipments  Shipment[]
+  posts      Post[]
+  createdAt  DateTime @default(now())
+
+  @@unique([campaignId, influencerId])
+}
+
+model Outreach {
+  id                   Int                @id @default(autoincrement())
+  campaignInfluencerId Int
+  campaignInfluencer   CampaignInfluencer @relation(fields: [campaignInfluencerId], references: [id])
+  channel     String
+  body        String
+  sentAt      DateTime?
+  repliedAt   DateTime?
+  reply       String?
+  agreedTerms String?
+}
+
+model Shipment {
+  id                   Int                @id @default(autoincrement())
+  campaignInfluencerId Int
+  campaignInfluencer   CampaignInfluencer @relation(fields: [campaignInfluencerId], references: [id])
+  shippedAt   DateTime?
+  trackingNo  String?
+  address     String?
+  itemCost    Int?
+  shippingFee Int?
+  rewardYen   Int?     @default(0)
+}
+
+model Post {
+  id                   Int                @id @default(autoincrement())
+  campaignInfluencerId Int
+  campaignInfluencer   CampaignInfluencer @relation(fields: [campaignInfluencerId], references: [id])
+  url         String
+  postedAt    DateTime?
+  postType    String?
+  caption     String?
+
+  reach       Int?
+  impressions Int?
+  likes       Int?
+  saves       Int?
+  comments    Int?
+  linkClicks  Int?
+
+  hasPr       Boolean @default(false)
+  hasRelation Boolean @default(false)
+  hasCta      Boolean @default(false)
+  ngWordHit   String?
+
+  secondaryUseOk Boolean @default(false)
+  assetUrl       String?
+  usedInAds      Boolean @default(false)
+}
