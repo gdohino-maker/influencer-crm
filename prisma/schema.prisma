@@ -182,6 +182,17 @@ model Shipment {
   rewardYen   Int?     @default(0)
 }
 
+// ============================================
+// YouTube自動検索キャッシュ(同一キーワード24h再利用)
+// ============================================
+
+model YoutubeSearchCache {
+  id        Int      @id @default(autoincrement())
+  keyword   String   @unique
+  results   String   // JSON文字列化したチャンネル候補配列
+  createdAt DateTime @default(now())
+}
+
 model Post {
   id                   Int                @id @default(autoincrement())
   campaignInfluencerId Int

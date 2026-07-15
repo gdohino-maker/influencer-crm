@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
-import { Card, PageTitle, Input, Textarea, Field, Select, Badge, EmptyState, SectionTitle } from "@/components/ui";
+import { Card, PageTitle, LinkButton, Input, Textarea, Field, Select, Badge, EmptyState, SectionTitle } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
-import { Sparkles, ArrowLeft, ChevronRight } from "lucide-react";
+import { Sparkles, ArrowLeft, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateBrand, updateDiscoveryKeywords, generateDiscoveryKeywords } from "../actions";
@@ -59,12 +59,19 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
         title={brand.name}
         subtitle={`${brand.client.name} のブランド`}
         action={
-          <Link
-            href={`/clients/${brand.clientId}`}
-            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
-          >
-            <ArrowLeft className="size-4" /> {brand.client.name}
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href={`/clients/${brand.clientId}`}
+              className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+            >
+              <ArrowLeft className="size-4" /> {brand.client.name}
+            </Link>
+            <LinkButton href={`/brands/${brandId}/discover`}>
+              <span className="inline-flex items-center gap-1.5">
+                <Search className="size-4" /> 候補を探す
+              </span>
+            </LinkButton>
+          </div>
         }
       />
 
