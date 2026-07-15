@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/db";
-import { Card, PageTitle, Badge, EmptyState, SectionTitle, Select } from "@/components/ui";
+import { Card, PageTitle, Badge, EmptyState, SectionTitle, Select, Input } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
-import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock } from "lucide-react";
+import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock, UserPlus, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addYoutubeCandidate, addRecommendedToCampaign } from "./actions";
+import { addYoutubeCandidate, addRecommendedToCampaign, addQuickInfluencer } from "./actions";
 import { generateDiscoveryKeywords } from "../../actions";
 
 export default async function DiscoverPage({
@@ -14,7 +14,7 @@ export default async function DiscoverPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ campaignId?: string; yt?: string }>;
+  searchParams: Promise<{ campaignId?: string; yt?: string; quickAdded?: string; quickError?: string }>;
 }) {
   const { id } = await params;
   const brandId = Number(id);
@@ -67,6 +67,7 @@ export default async function DiscoverPage({
   }
 
   const generateKeywordsWithId = generateDiscoveryKeywords.bind(null, brandId);
+  const addQuickWithBrandId = addQuickInfluencer.bind(null, brandId);
 
   return (
     <div>
@@ -82,6 +83,22 @@ export default async function DiscoverPage({
           </Link>
         }
       />
+
+      {sp.quickAdded && (
+        <div className="mb-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 flex items-center gap-2">
+          <CheckCircle2 className="size-4 shrink-0" />
+          @{sp.quickAdded} をマスタに登録しました{selectedCampaignId ? "(候補にも追加しました)" : ""}。ジャンルや年齢層はまだ空なので、
+          <Link href="/influencers" className="underline">
+            マスタ一覧
+          </Link>
+          から開いて「AIでジャンル/属性を推定」しておくとマスタ推薦の精度が上がります。
+        </div>
+      )}
+      {sp.quickError && (
+        <div className="mb-6 rounded-md bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3">
+          URLを認識できませんでした。Instagram/X(Twitter)/TikTokのプロフィールURL(例: https://www.instagram.com/username)を貼り付けてください。
+        </div>
+      )}
 
       <Card className="mb-6">
         <form method="get" className="flex items-end gap-3">
@@ -108,6 +125,30 @@ export default async function DiscoverPage({
             から施策を作成すると、ここから直接候補を追加できます。
           </p>
         )}
+      </Card>
+
+      {/* 手動発掘クイック追加 */}
+      <SectionTitle>
+        <span className="inline-flex items-center gap-1.5">
+          <UserPlus className="size-4 text-slate-400" /> 手動で追加(Instagram/X/TikTok)
+        </span>
+      </SectionTitle>
+      <p className="text-xs text-slate-500 mb-3">
+        Instagram/X/TikTokは公式の検索APIが無いため自動発掘できません。ブラウザで見つけた気になる人のプロフィールURLをここに貼るだけで、すぐマスタに登録できます。
+      </p>
+      <Card className="mb-10">
+        <form action={addQuickWithBrandId} className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              プロフィールURL(Instagram / X / TikTok)
+            </label>
+            <Input name="url" required placeholder="https://www.instagram.com/username" />
+          </div>
+          {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}
+          <SubmitButton pendingText="登録中...">
+            {selectedCampaignId ? "マスタ登録+候補追加" : "マスタに登録"}
+          </SubmitButton>
+        </form>
       </Card>
 
       {/* マスタ推薦 */}
