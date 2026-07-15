@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { Card, PageTitle, Badge, LinkButton, EmptyState, SectionTitle } from "@/components/ui";
-import { AlertTriangle, Building2, Megaphone, Users, ImageIcon } from "lucide-react";
+import { AlertTriangle, Building2, Megaphone, Users, ImageIcon, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 const CAMPAIGN_STATUS_LABELS: Record<string, string> = { planning: "計画中", running: "実施中", closed: "終了" };
@@ -50,6 +50,23 @@ export default async function DashboardPage() {
         subtitle="進行中キャンペーン(クライアント別)とコンプライアンス警告"
         action={<LinkButton href="/clients">クライアント一覧へ</LinkButton>}
       />
+
+      <Link
+        href="/start"
+        className="block mb-6 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white px-6 py-5 shadow-lg shadow-indigo-200 hover:shadow-xl transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-lg flex items-center gap-2">
+              <Sparkles className="size-5" /> 新しく探す
+            </p>
+            <p className="text-sm text-indigo-100 mt-1">
+              企業名とどんな人に届けたいかを入力するだけ。AIが条件を整理してインフルエンサー候補をすぐに提案します。
+            </p>
+          </div>
+          <span className="text-2xl">→</span>
+        </div>
+      </Link>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <Card>

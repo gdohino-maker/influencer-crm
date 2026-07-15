@@ -3,24 +3,33 @@ import { Card, PageTitle, Badge, EmptyState, SectionTitle, Select, Input } from 
 import { SubmitButton } from "@/components/submit-button";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
-import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock, UserPlus, CheckCircle2 } from "lucide-react";
+import { generateRecommendReasons } from "@/lib/recommend-reason";
+import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock, UserPlus, CheckCircle2, PartyPopper } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addYoutubeCandidate, addRecommendedToCampaign, addQuickInfluencer } from "./actions";
 import { generateDiscoveryKeywords } from "../../actions";
+
+const PLATFORM_COLORS: Record<string, string> = {
+  instagram: "bg-gradient-to-br from-fuchsia-500 to-amber-400",
+  youtube: "bg-red-600",
+  x: "bg-slate-900",
+  tiktok: "bg-slate-900",
+};
 
 export default async function DiscoverPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ campaignId?: string; yt?: string; quickAdded?: string; quickError?: string }>;
+  searchParams: Promise<{ campaignId?: string; yt?: string; quickAdded?: string; quickError?: string; new?: string }>;
 }) {
   const { id } = await params;
   const brandId = Number(id);
   const sp = await searchParams;
   const selectedCampaignId = sp.campaignId ? Number(sp.campaignId) : undefined;
   const ytKeyword = sp.yt?.trim();
+  const isNew = sp.new === "1";
 
   const brand = await prisma.brand.findUnique({
     where: { id: brandId },
@@ -51,6 +60,18 @@ export default async function DiscoverPage({
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 30);
+
+  let reasons = new Map<number, string>();
+  if (recommended.length > 0) {
+    try {
+      reasons = await generateRecommendReasons(
+        recommended.slice(0, 8).map((r) => r.inf),
+        brand
+      );
+    } catch {
+      // AI理由生成に失敗しても候補一覧の表示は継続する
+    }
+  }
 
   // --- YouTube自動検索(要APIキー) ---
   let ytResults: YoutubeChannelCandidate[] = [];
@@ -83,6 +104,15 @@ export default async function DiscoverPage({
           </Link>
         }
       />
+
+      {isNew && (
+        <div className="mb-6 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 text-indigo-900 text-sm px-4 py-3 flex items-center gap-2">
+          <PartyPopper className="size-4 shrink-0 text-indigo-500" />
+          「{brand.name}」を登録しました。AIが整理した条件(
+          {brand.targetAgeBands} / {brand.targetGender === "all" ? "全性別" : brand.targetGender} /{" "}
+          {brand.targetGenres})をもとに、下に候補を並べています。
+        </div>
+      )}
 
       {sp.quickAdded && (
         <div className="mb-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 flex items-center gap-2">
@@ -127,38 +157,18 @@ export default async function DiscoverPage({
         )}
       </Card>
 
-      {/* 手動発掘クイック追加 */}
+      {/* マスタ推薦(メイン結果) */}
       <SectionTitle>
         <span className="inline-flex items-center gap-1.5">
-          <UserPlus className="size-4 text-slate-400" /> 手動で追加(Instagram/X/TikTok)
+          <Users2 className="size-4 text-slate-400" /> おすすめの候補
         </span>
       </SectionTitle>
       <p className="text-xs text-slate-500 mb-3">
-        Instagram/X/TikTokは公式の検索APIが無いため自動発掘できません。ブラウザで見つけた気になる人のプロフィールURLをここに貼るだけで、すぐマスタに登録できます。
-      </p>
-      <Card className="mb-10">
-        <form action={addQuickWithBrandId} className="flex items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">
-              プロフィールURL(Instagram / X / TikTok)
-            </label>
-            <Input name="url" required placeholder="https://www.instagram.com/username" />
-          </div>
-          {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}
-          <SubmitButton pendingText="登録中...">
-            {selectedCampaignId ? "マスタ登録+候補追加" : "マスタに登録"}
-          </SubmitButton>
-        </form>
-      </Card>
-
-      {/* マスタ推薦 */}
-      <SectionTitle>
-        <span className="inline-flex items-center gap-1.5">
-          <Users2 className="size-4 text-slate-400" /> マスタから推薦(既存ストック・即時)
-        </span>
-      </SectionTitle>
-      <p className="text-xs text-slate-500 mb-3">
-        全社のインフルエンサーマスタから、このブランドのターゲット年齢層・性別・ジャンルに近い人を自動で並べています。APIキー不要です。
+        全社のインフルエンサーマスタから、このブランドのターゲット年齢層・性別・ジャンルに近い人を自動で並べています。上位{Math.min(
+          8,
+          recommended.length
+        )}
+        件はAIが選定理由も生成しています。
       </p>
       {recommended.length === 0 && (
         <EmptyState>
@@ -170,37 +180,63 @@ export default async function DiscoverPage({
           で属性を登録するか、下のYouTube自動検索で新規発掘してください。
         </EmptyState>
       )}
-      <div className="space-y-2 mb-10">
+      <div className="grid grid-cols-2 gap-3 mb-10">
         {recommended.map(({ inf, score }) => {
           const alreadyAdded = selectedCampaignId ? existingMemberIds.has(inf.id) : false;
           const addWithBrandId = addRecommendedToCampaign.bind(null, brandId);
+          const reason = reasons.get(inf.id);
+          const initial = (inf.displayName ?? inf.username).slice(0, 1).toUpperCase();
           return (
-            <Card key={inf.id} className="flex items-center justify-between py-3">
-              <div>
-                <Link href={`/influencers/${inf.id}`} className="font-medium text-slate-900 hover:text-indigo-600">
-                  @{inf.username}
-                </Link>
-                <span className="text-xs text-slate-400 ml-2">{inf.platform}</span>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {inf.genreTags ?? "ジャンル未設定"} ・ フォロワー推定層: {inf.audienceAgeGuess ?? "-"} /{" "}
-                  {inf.audienceGenderGuess ?? "-"} ・ 一致度スコア {score.toFixed(0)}
-                </p>
+            <Card key={inf.id} className="flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`size-11 rounded-full shrink-0 flex items-center justify-center text-white font-semibold ${
+                    PLATFORM_COLORS[inf.platform] ?? "bg-slate-400"
+                  }`}
+                >
+                  {initial}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Link href={`/influencers/${inf.id}`} className="font-semibold text-slate-900 hover:text-indigo-600 truncate">
+                      @{inf.username}
+                    </Link>
+                    <Badge color="neutral">{inf.platform}</Badge>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {inf.followers ? `フォロワー ${inf.followers.toLocaleString()}` : "フォロワー数不明"} ・ 一致度 {score.toFixed(0)}
+                  </p>
+                </div>
               </div>
-              {selectedCampaignId ? (
-                alreadyAdded ? (
-                  <Badge color="green">追加済み</Badge>
-                ) : (
-                  <form action={addWithBrandId}>
-                    <input type="hidden" name="influencerId" value={inf.id} />
-                    <input type="hidden" name="campaignId" value={selectedCampaignId} />
-                    <SubmitButton variant="secondary" size="sm">
-                      候補に追加
-                    </SubmitButton>
-                  </form>
-                )
+
+              {reason ? (
+                <p className="text-sm text-indigo-900 bg-indigo-50 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                  <Sparkles className="size-3.5 shrink-0 mt-0.5 text-indigo-500" />
+                  {reason}
+                </p>
               ) : (
-                <span className="text-xs text-slate-400">キャンペーン未選択</span>
+                <p className="text-xs text-slate-500">
+                  {inf.genreTags ?? "ジャンル未設定"} ・ フォロワー推定層: {inf.audienceAgeGuess ?? "-"} / {inf.audienceGenderGuess ?? "-"}
+                </p>
               )}
+
+              <div className="flex justify-end">
+                {selectedCampaignId ? (
+                  alreadyAdded ? (
+                    <Badge color="green">追加済み</Badge>
+                  ) : (
+                    <form action={addWithBrandId}>
+                      <input type="hidden" name="influencerId" value={inf.id} />
+                      <input type="hidden" name="campaignId" value={selectedCampaignId} />
+                      <SubmitButton variant="secondary" size="sm">
+                        候補に追加
+                      </SubmitButton>
+                    </form>
+                  )
+                ) : (
+                  <span className="text-xs text-slate-400">キャンペーン未選択</span>
+                )}
+              </div>
             </Card>
           );
         })}
@@ -313,6 +349,30 @@ export default async function DiscoverPage({
           </div>
         </>
       )}
+
+      {/* 手動発掘クイック追加 */}
+      <SectionTitle>
+        <span className="inline-flex items-center gap-1.5">
+          <UserPlus className="size-4 text-slate-400" /> 手動で追加(Instagram/X/TikTok)
+        </span>
+      </SectionTitle>
+      <p className="text-xs text-slate-500 mb-3">
+        Instagram/X/TikTokは公式の検索APIが無いため自動発掘できません。ブラウザで見つけた気になる人のプロフィールURLをここに貼るだけで、すぐマスタに登録できます。
+      </p>
+      <Card>
+        <form action={addQuickWithBrandId} className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              プロフィールURL(Instagram / X / TikTok)
+            </label>
+            <Input name="url" required placeholder="https://www.instagram.com/username" />
+          </div>
+          {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}
+          <SubmitButton pendingText="登録中...">
+            {selectedCampaignId ? "マスタ登録+候補追加" : "マスタに登録"}
+          </SubmitButton>
+        </form>
+      </Card>
     </div>
   );
 }

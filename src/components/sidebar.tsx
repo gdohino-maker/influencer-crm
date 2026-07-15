@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, SlidersHorizontal, Users, Sparkles, LogOut } from "lucide-react";
+import { LayoutDashboard, Building2, SlidersHorizontal, Users, Sparkles, LogOut, Plus } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
@@ -19,6 +19,14 @@ export function Sidebar() {
       <div className="h-16 flex items-center gap-2 px-5 border-b border-slate-200">
         <Sparkles className="size-5 text-indigo-600" />
         <span className="font-bold text-slate-900 tracking-tight">Influencer CRM</span>
+      </div>
+      <div className="px-3 pt-4">
+        <Link
+          href="/start"
+          className="flex items-center justify-center gap-1.5 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-sm shadow-indigo-200 transition-colors"
+        >
+          <Plus className="size-4" /> 新しく探す
+        </Link>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         {NAV.map((item) => {
