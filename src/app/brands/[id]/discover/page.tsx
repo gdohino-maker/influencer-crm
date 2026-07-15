@@ -4,10 +4,10 @@ import { SubmitButton } from "@/components/submit-button";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
 import { generateRecommendReasons } from "@/lib/recommend-reason";
-import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock, UserPlus, CheckCircle2, PartyPopper } from "lucide-react";
+import { ArrowLeft, Sparkles, SquarePlay, Users2, Clock, UserPlus, CheckCircle2, PartyPopper, ExternalLink, Check } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addYoutubeCandidate, addRecommendedToCampaign, addQuickInfluencer } from "./actions";
+import { addYoutubeCandidate, decideRecommended, addQuickInfluencer } from "./actions";
 import { generateDiscoveryKeywords } from "../../actions";
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -15,6 +15,13 @@ const PLATFORM_COLORS: Record<string, string> = {
   youtube: "bg-red-600",
   x: "bg-slate-900",
   tiktok: "bg-slate-900",
+};
+
+const PLATFORM_VIEW_LABELS: Record<string, string> = {
+  instagram: "Instagramで見る",
+  youtube: "YouTubeで見る",
+  x: "Xで見る",
+  tiktok: "TikTokで見る",
 };
 
 export default async function DiscoverPage({
@@ -183,7 +190,7 @@ export default async function DiscoverPage({
       <div className="grid grid-cols-2 gap-3 mb-10">
         {recommended.map(({ inf, score }) => {
           const alreadyAdded = selectedCampaignId ? existingMemberIds.has(inf.id) : false;
-          const addWithBrandId = addRecommendedToCampaign.bind(null, brandId);
+          const decideWithBrandId = decideRecommended.bind(null, brandId);
           const reason = reasons.get(inf.id);
           const initial = (inf.displayName ?? inf.username).slice(0, 1).toUpperCase();
           return (
@@ -198,9 +205,7 @@ export default async function DiscoverPage({
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Link href={`/influencers/${inf.id}`} className="font-semibold text-slate-900 hover:text-indigo-600 truncate">
-                      @{inf.username}
-                    </Link>
+                    <span className="font-semibold text-slate-900 truncate">@{inf.username}</span>
                     <Badge color="neutral">{inf.platform}</Badge>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -220,19 +225,32 @@ export default async function DiscoverPage({
                 </p>
               )}
 
-              <div className="flex justify-end">
-                {selectedCampaignId ? (
-                  alreadyAdded ? (
-                    <Badge color="green">追加済み</Badge>
-                  ) : (
-                    <form action={addWithBrandId}>
-                      <input type="hidden" name="influencerId" value={inf.id} />
-                      <input type="hidden" name="campaignId" value={selectedCampaignId} />
-                      <SubmitButton variant="secondary" size="sm">
-                        候補に追加
-                      </SubmitButton>
-                    </form>
-                  )
+              <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                <a
+                  href={inf.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600"
+                >
+                  <ExternalLink className="size-3.5" />
+                  {PLATFORM_VIEW_LABELS[inf.platform] ?? "プロフィールを見る"}
+                </a>
+
+                {alreadyAdded ? (
+                  <Link
+                    href={`/campaigns/${selectedCampaignId}`}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-md"
+                  >
+                    <Check className="size-3.5" /> 決定済み
+                  </Link>
+                ) : selectedCampaignId ? (
+                  <form action={decideWithBrandId}>
+                    <input type="hidden" name="influencerId" value={inf.id} />
+                    <input type="hidden" name="campaignId" value={selectedCampaignId} />
+                    <SubmitButton size="sm" pendingText="処理中...">
+                      決定する
+                    </SubmitButton>
+                  </form>
                 ) : (
                   <span className="text-xs text-slate-400">キャンペーン未選択</span>
                 )}

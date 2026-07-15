@@ -90,19 +90,20 @@ export async function addQuickInfluencer(brandId: number, formData: FormData) {
   redirect(`/brands/${brandId}/discover?quickAdded=${encodeURIComponent(influencer.username)}${qsCampaign}`);
 }
 
-// マスタ推薦のインフルエンサーを指定キャンペーンの候補に追加する
-export async function addRecommendedToCampaign(brandId: number, formData: FormData) {
+// マスタ推薦のインフルエンサーを「決定」し、そのままメール文(DM下書き)作成画面へ遷移する
+export async function decideRecommended(brandId: number, formData: FormData) {
   const influencerId = Number(formData.get("influencerId"));
   const campaignId = Number(formData.get("campaignId"));
   if (!influencerId || !campaignId) throw new Error("キャンペーンを選択してください");
 
-  const existing = await prisma.campaignInfluencer.findUnique({
+  let member = await prisma.campaignInfluencer.findUnique({
     where: { campaignId_influencerId: { campaignId, influencerId } },
   });
-  if (!existing) {
-    await prisma.campaignInfluencer.create({ data: { campaignId, influencerId } });
+  if (!member) {
+    member = await prisma.campaignInfluencer.create({ data: { campaignId, influencerId } });
   }
 
   revalidatePath(`/brands/${brandId}/discover`);
   revalidatePath(`/campaigns/${campaignId}`);
+  redirect(`/campaigns/${campaignId}/members/${member.id}`);
 }

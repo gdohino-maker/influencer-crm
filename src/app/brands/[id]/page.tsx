@@ -52,6 +52,10 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
   const createCampaignWithId = createCampaign.bind(null, brandId);
   const updateKeywordsWithId = updateDiscoveryKeywords.bind(null, brandId);
   const generateKeywordsWithId = generateDiscoveryKeywords.bind(null, brandId);
+  const latestCampaignId = brand.campaigns[0]?.id;
+  const discoverHref = latestCampaignId
+    ? `/brands/${brandId}/discover?campaignId=${latestCampaignId}`
+    : `/brands/${brandId}/discover`;
 
   return (
     <div>
@@ -66,7 +70,7 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
             >
               <ArrowLeft className="size-4" /> {brand.client.name}
             </Link>
-            <LinkButton href={`/brands/${brandId}/discover`}>
+            <LinkButton href={discoverHref}>
               <span className="inline-flex items-center gap-1.5">
                 <Search className="size-4" /> 候補を探す
               </span>

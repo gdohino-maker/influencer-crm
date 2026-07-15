@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import { Card, PageTitle, Input, Textarea, Field, Select, StatusBadge, Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
-import { Sparkles, ArrowLeft, Truck, Send, MessageSquareText } from "lucide-react";
+import { CopyButton } from "@/components/copy-button";
+import { Sparkles, ArrowLeft, Truck, Send, MessageSquareText, Mail } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { defaultBlockA, composeDm } from "@/lib/dm-template";
@@ -63,6 +64,18 @@ export default async function MemberDetailPage({
         <StatusBadge status={member.status} />
         <span className="text-sm text-slate-500">スコア: {member.score != null ? member.score.toFixed(1) : "-"}</span>
       </div>
+
+      {/* コピーして送るだけ */}
+      <Card className="mb-6 border-indigo-200 bg-indigo-50/40">
+        <h2 className="font-semibold text-slate-800 flex items-center gap-1.5 mb-1">
+          <Mail className="size-4 text-indigo-500" /> メール文をコピーして送る
+        </h2>
+        <p className="text-xs text-slate-500 mb-3">
+          この文面をそのままDM/メールにコピー&ペーストして送信してください。文面を調整したい場合は下の「DM/メッセージ生成」で編集できます。
+        </p>
+        <Textarea readOnly rows={10} defaultValue={previewDm} className="bg-white mb-3" />
+        <CopyButton text={previewDm} label="この文面をコピーする" />
+      </Card>
 
       {/* DM生成 */}
       <Card className="mb-6">

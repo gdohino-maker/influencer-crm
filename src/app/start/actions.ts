@@ -86,5 +86,15 @@ export async function createFromPrompt(formData: FormData) {
     },
   });
 
-  redirect(`/brands/${brand.id}/discover?new=1`);
+  // 検索した候補をすぐ「決定」できるよう、既定のキャンペーンを自動作成しておく(履歴にも残る)
+  const campaign = await prisma.campaign.create({
+    data: {
+      brandId: brand.id,
+      name: `${brandName}の候補選定`,
+      goal: "ugc_volume",
+      status: "running",
+    },
+  });
+
+  redirect(`/brands/${brand.id}/discover?new=1&campaignId=${campaign.id}`);
 }
