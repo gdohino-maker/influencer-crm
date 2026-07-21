@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
-const COOKIE_NAME = "pf_auth";
-
-export function middleware(req: NextRequest) {
-  const cookie = req.cookies.get(COOKIE_NAME)?.value;
-  if (cookie === process.env.APP_PASSWORD) {
+export async function proxy(req: NextRequest) {
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  if (await verifySessionToken(token)) {
     return NextResponse.next();
   }
 

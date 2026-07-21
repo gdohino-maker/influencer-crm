@@ -3,38 +3,39 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
+function readWeights(formData: FormData) {
+  const weights = {
+    wAudience: Number(formData.get("wAudience") ?? 0),
+    wGenre: Number(formData.get("wGenre") ?? 0),
+    wEr: Number(formData.get("wEr") ?? 0),
+    wPhoto: Number(formData.get("wPhoto") ?? 0),
+    wNotJaded: Number(formData.get("wNotJaded") ?? 0),
+    wActivity: Number(formData.get("wActivity") ?? 0),
+    wFollower: Number(formData.get("wFollower") ?? 0),
+  };
+  const total = Object.values(weights).reduce((sum, v) => sum + v, 0);
+  if (total !== 100) {
+    throw new Error(`重みの合計は100にしてください(現在の合計: ${total})`);
+  }
+  return weights;
+}
+
 export async function createScoringProfile(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("プロファイル名は必須です");
+  const weights = readWeights(formData);
   await prisma.scoringProfile.create({
-    data: {
-      name,
-      wAudience: Number(formData.get("wAudience") ?? 0),
-      wGenre: Number(formData.get("wGenre") ?? 0),
-      wEr: Number(formData.get("wEr") ?? 0),
-      wPhoto: Number(formData.get("wPhoto") ?? 0),
-      wNotJaded: Number(formData.get("wNotJaded") ?? 0),
-      wActivity: Number(formData.get("wActivity") ?? 0),
-      wFollower: Number(formData.get("wFollower") ?? 0),
-    },
+    data: { name, ...weights },
   });
   revalidatePath("/profiles");
 }
 
 export async function updateScoringProfile(id: number, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
+  const weights = readWeights(formData);
   await prisma.scoringProfile.update({
     where: { id },
-    data: {
-      name,
-      wAudience: Number(formData.get("wAudience") ?? 0),
-      wGenre: Number(formData.get("wGenre") ?? 0),
-      wEr: Number(formData.get("wEr") ?? 0),
-      wPhoto: Number(formData.get("wPhoto") ?? 0),
-      wNotJaded: Number(formData.get("wNotJaded") ?? 0),
-      wActivity: Number(formData.get("wActivity") ?? 0),
-      wFollower: Number(formData.get("wFollower") ?? 0),
-    },
+    data: { name, ...weights },
   });
   revalidatePath("/profiles");
 }

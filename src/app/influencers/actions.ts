@@ -2,12 +2,26 @@
 
 import { prisma } from "@/lib/db";
 import { generateJson } from "@/lib/gemini";
+import { fetchInstagramBusinessDiscovery } from "@/lib/instagram";
 import { Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+function normalizeNfkc(text: string): string {
+  return text.normalize("NFKC");
+}
+
+async function readBulkSource(formData: FormData): Promise<string> {
+  const file = formData.get("csvFile");
+  if (file instanceof File && file.size > 0) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    return stripBom(buffer.toString("utf-8"));
+  }
+  return stripBom(String(formData.get("bulk") ?? ""));
 }
 
 export async function createInfluencer(formData: FormData) {
@@ -46,20 +60,24 @@ export async function createInfluencer(formData: FormData) {
 
 export async function createInfluencersBulk(formData: FormData) {
   const platform = String(formData.get("platform") ?? "").trim();
-  const raw = stripBom(String(formData.get("bulk") ?? ""));
-  if (!platform || !raw.trim()) throw new Error("プラットフォームと一覧データは必須です");
+  const raw = await readBulkSource(formData);
+  if (!platform || !raw.trim()) throw new Error("プラットフォームと一覧データ(貼り付けまたはCSVファイル)は必須です");
 
   const lines = raw
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l) => normalizeNfkc(l.trim()))
     .filter(Boolean);
 
   let created = 0;
   let skipped = 0;
 
   for (const line of lines) {
+    // ヘッダー行はスキップ
+    if (/^username\s*,/i.test(line)) continue;
+
     const cols = line.split(",").map((c) => c.trim());
-    const [username, url, displayName, followersStr, engagementRateStr, genreTags] = cols;
+    const [username, url, displayName, followersStr, engagementRateStr, ...genreRest] = cols;
+    const genreTags = genreRest.join(",").trim();
     if (!username) continue;
 
     const existing = await prisma.influencer.findUnique({
@@ -176,6 +194,29 @@ bio: ${inf.bio ?? "(不明)"}
       ageBand: result.ageBand || inf.ageBand,
       audienceAgeGuess: result.audienceAgeGuess || inf.audienceAgeGuess,
       audienceGenderGuess: result.audienceGenderGuess || inf.audienceGenderGuess,
+      lastEnrichedAt: new Date(),
+    },
+  });
+
+  revalidatePath(`/influencers/${id}`);
+}
+
+export async function enrichFromInstagram(id: number) {
+  const inf = await prisma.influencer.findUniqueOrThrow({ where: { id } });
+  if (inf.platform !== "instagram") {
+    throw new Error("Instagram enrichはplatform=instagramのアカウントのみ対応です");
+  }
+
+  const result = await fetchInstagramBusinessDiscovery(inf.username);
+
+  await prisma.influencer.update({
+    where: { id },
+    data: {
+      followers: result.followersCount ?? inf.followers,
+      postsCount: result.mediaCount ?? inf.postsCount,
+      avgLike: result.avgLike ?? inf.avgLike,
+      avgComment: result.avgComment ?? inf.avgComment,
+      engagementRate: result.engagementRate ?? inf.engagementRate,
       lastEnrichedAt: new Date(),
     },
   });

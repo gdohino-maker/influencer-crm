@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, SlidersHorizontal, Users, Sparkles, LogOut, Plus } from "lucide-react";
+import { LayoutDashboard, Building2, SlidersHorizontal, Users, Sparkles, LogOut, Plus, Images } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/clients", label: "クライアント/ブランド", icon: Building2 },
   { href: "/profiles", label: "プロファイル設定", icon: SlidersHorizontal },
   { href: "/influencers", label: "インフルエンサー", icon: Users },
+  { href: "/assets", label: "二次利用素材", icon: Images },
 ];
 
 export function Sidebar() {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { Card, PageTitle, LinkButton, Badge } from "@/components/ui";
+import { AiSearchBox } from "@/components/ai-search-box";
 import { UserPlus, Search } from "lucide-react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
@@ -36,6 +37,26 @@ export default async function InfluencersPage({
     where,
     orderBy: { createdAt: "desc" },
     take: 200,
+    include: {
+      campaigns: {
+        include: { posts: true, outreaches: true },
+      },
+    },
+  });
+
+  const withStats = influencers.map((inf) => {
+    const assignmentCount = inf.campaigns.length;
+    const posts = inf.campaigns.flatMap((ci) => ci.posts);
+    const reaches = posts.map((p) => p.reach).filter((r): r is number => r != null);
+    const avgReach = reaches.length ? Math.round(reaches.reduce((a, b) => a + b, 0) / reaches.length) : null;
+    const ctaRate = posts.length ? Math.round((posts.filter((p) => p.hasCta).length / posts.length) * 100) : null;
+
+    const outreaches = inf.campaigns.flatMap((ci) => ci.outreaches).filter((o) => o.sentAt);
+    const replyRate = outreaches.length
+      ? Math.round((outreaches.filter((o) => o.repliedAt).length / outreaches.length) * 100)
+      : null;
+
+    return { ...inf, assignmentCount, avgReach, ctaRate, replyRate };
   });
 
   return (
@@ -57,6 +78,8 @@ export default async function InfluencersPage({
           一括登録完了: {sp.bulkCreated ?? 0}件追加 / {sp.bulkSkipped ?? 0}件は既存のためスキップ
         </div>
       )}
+
+      <AiSearchBox />
 
       <Card className="mb-4">
         <form className="flex gap-3 items-end flex-wrap" method="get">
@@ -104,11 +127,15 @@ export default async function InfluencersPage({
               <th className="text-right px-4 py-2">フォロワー</th>
               <th className="text-right px-4 py-2">ER</th>
               <th className="text-left px-4 py-2">ジャンル</th>
+              <th className="text-right px-4 py-2">起用回数</th>
+              <th className="text-right px-4 py-2">平均リーチ</th>
+              <th className="text-right px-4 py-2">CTA実装率</th>
+              <th className="text-right px-4 py-2">返信率</th>
               <th className="text-left px-4 py-2">状態</th>
             </tr>
           </thead>
           <tbody>
-            {influencers.map((inf) => (
+            {withStats.map((inf) => (
               <tr key={inf.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-2 text-slate-600">{PLATFORM_LABELS[inf.platform] ?? inf.platform}</td>
                 <td className="px-4 py-2">
@@ -120,14 +147,18 @@ export default async function InfluencersPage({
                 <td className="px-4 py-2 text-right text-slate-700">{inf.followers?.toLocaleString() ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.engagementRate ? `${inf.engagementRate}%` : "-"}</td>
                 <td className="px-4 py-2 text-slate-600">{inf.genreTags ?? "-"}</td>
+                <td className="px-4 py-2 text-right text-slate-700">{inf.assignmentCount}</td>
+                <td className="px-4 py-2 text-right text-slate-700">{inf.avgReach?.toLocaleString() ?? "-"}</td>
+                <td className="px-4 py-2 text-right text-slate-700">{inf.ctaRate != null ? `${inf.ctaRate}%` : "-"}</td>
+                <td className="px-4 py-2 text-right text-slate-700">{inf.replyRate != null ? `${inf.replyRate}%` : "-"}</td>
                 <td className="px-4 py-2">
                   {inf.isBlacklisted ? <Badge color="red">ブラックリスト</Badge> : <Badge color="green">通常</Badge>}
                 </td>
               </tr>
             ))}
-            {influencers.length === 0 && (
+            {withStats.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
                   該当するインフルエンサーがいません
                 </td>
               </tr>

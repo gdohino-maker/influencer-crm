@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Sparkles, ArrowLeft, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateBrand, updateDiscoveryKeywords, generateDiscoveryKeywords } from "../actions";
+import { updateBrand, updateDiscoveryKeywords, generateDiscoveryKeywords, importBrandSearchMetrics } from "../actions";
 import { createCampaign } from "../../campaigns/actions";
 
 const CATEGORY_OPTIONS = [
@@ -36,12 +36,31 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
     where: { id: brandId },
     include: {
       client: true,
-      campaigns: { include: { members: true }, orderBy: { createdAt: "desc" } },
+      campaigns: {
+        include: { members: { include: { posts: true, influencer: true } } },
+        orderBy: { createdAt: "desc" },
+      },
       complianceProfile: true,
       scoringProfile: true,
+      searchMetrics: { orderBy: { reportDate: "asc" } },
     },
   });
   if (!brand) notFound();
+
+  const importMetricsWithId = importBrandSearchMetrics.bind(null, brandId);
+
+  const postEvents = brand.campaigns
+    .flatMap((c) => c.members)
+    .flatMap((m) => m.posts.map((p) => ({ date: p.postedAt, label: `@${m.influencer.username} 投稿`, type: "post" as const })))
+    .filter((e): e is { date: Date; label: string; type: "post" } => e.date != null);
+
+  const metricEvents = brand.searchMetrics.map((m) => ({
+    date: m.reportDate,
+    label: `指名検索${m.searchTerm ? `(${m.searchTerm})` : ""}: 順位/検索量 ${m.searchFrequencyRank ?? "-"}`,
+    type: "metric" as const,
+  }));
+
+  const timeline = [...postEvents, ...metricEvents].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const [scoringProfiles, complianceProfiles] = await Promise.all([
     prisma.scoringProfile.findMany(),
@@ -130,6 +149,41 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
               <Textarea name="discoveryKeywords" rows={3} defaultValue={brand.discoveryKeywords ?? ""} />
               <SubmitButton variant="secondary">保存</SubmitButton>
             </form>
+          </Card>
+
+          <Card className="mt-6">
+            <h2 className="font-semibold mb-2 text-slate-800">指名検索×投稿タイムライン(Amazon Brand Analytics)</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Amazon Brand Analyticsの指名検索CSV(Search Query Performance等)をアップロードすると、投稿タイムラインと重畳して表示します。
+            </p>
+            <form action={importMetricsWithId} className="flex items-end gap-3 mb-4">
+              <div className="flex-1">
+                <Field label="CSVファイル">
+                  <input
+                    type="file"
+                    name="csvFile"
+                    accept=".csv,text/csv"
+                    className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-200"
+                  />
+                </Field>
+              </div>
+              <SubmitButton variant="secondary">取り込む</SubmitButton>
+            </form>
+            {timeline.length === 0 ? (
+              <p className="text-sm text-slate-400">まだデータがありません</p>
+            ) : (
+              <ul className="space-y-1.5 max-h-72 overflow-y-auto">
+                {timeline.map((e, i) => (
+                  <li key={i} className="text-xs flex items-center gap-2">
+                    <span className="text-slate-400 w-24 shrink-0">
+                      {e.date.toLocaleDateString("ja-JP")}
+                    </span>
+                    <Badge color={e.type === "post" ? "blue" : "violet"}>{e.type === "post" ? "投稿" : "指名検索"}</Badge>
+                    <span className="text-slate-600">{e.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <Card className="mt-6">

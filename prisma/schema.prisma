@@ -45,8 +45,22 @@ model Brand {
 
   discoveryKeywords String?
 
-  campaigns Campaign[]
-  createdAt DateTime   @default(now())
+  campaigns     Campaign[]
+  searchMetrics BrandSearchMetric[]
+  createdAt     DateTime            @default(now())
+}
+
+// Amazon Brand Analytics（指名検索CSV）からのインポート結果。投稿タイムラインと重畳して見るための時系列データ。
+model BrandSearchMetric {
+  id                  Int      @id @default(autoincrement())
+  brandId             Int
+  brand               Brand    @relation(fields: [brandId], references: [id])
+  reportDate          DateTime
+  searchTerm          String   @default("")
+  searchFrequencyRank Int?
+  createdAt           DateTime @default(now())
+
+  @@unique([brandId, reportDate, searchTerm])
 }
 
 model Campaign {

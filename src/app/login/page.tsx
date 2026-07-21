@@ -9,6 +9,7 @@ export default async function LoginPage({
 }) {
   const sp = await searchParams;
   const hasError = sp.error === "1";
+  const isRateLimited = sp.error === "ratelimit";
   const next = sp.next ?? "/";
 
   return (
@@ -24,6 +25,11 @@ export default async function LoginPage({
             <Input name="password" type="password" required autoFocus />
           </Field>
           {hasError && <p className="text-sm text-red-600">パスワードが違います</p>}
+          {isRateLimited && (
+            <p className="text-sm text-red-600">
+              試行回数が多すぎます。しばらくしてから再度お試しください。
+            </p>
+          )}
           <Button type="submit" className="w-full">
             ログイン
           </Button>

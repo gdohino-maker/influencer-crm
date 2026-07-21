@@ -34,7 +34,7 @@ export default async function ProfilesPage() {
       <section className="mb-10">
         <h2 className="font-semibold text-lg mb-3 text-slate-800">スコアリングプロファイル</h2>
         <p className="text-sm text-slate-500 mb-4">
-          重みの合計は100を目安にしてください(厳密な制約はありません)。フォロワー数の重みはデフォルト0=リーチは主要条件にしない方針です。
+          重みの合計は100にしてください(保存時に強制されます)。フォロワー数の重みはデフォルト0=リーチは主要条件にしない方針です。
         </p>
         <div className="grid grid-cols-2 gap-4">
           {scoringProfiles.map((sp) => {

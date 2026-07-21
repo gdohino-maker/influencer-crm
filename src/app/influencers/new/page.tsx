@@ -71,11 +71,11 @@ export default function NewInfluencerPage() {
         <Card>
           <h2 className="font-semibold mb-4 text-slate-800">一括登録</h2>
           <p className="text-xs text-slate-500 mb-4">
-            1行1件、カンマ区切りで貼り付けてください。
+            1行1件、カンマ区切りで貼り付けるか、CSVファイル(utf-8-sig対応)をアップロードしてください。
             <br />
             形式: <code className="bg-slate-100 px-1">username,url,表示名,フォロワー数,ER,ジャンルタグ</code>
             <br />
-            (usernameのみ必須。既に登録済のusernameはスキップされます)
+            (usernameのみ必須。既に登録済のusernameはスキップされます。ファイルを選択した場合は貼り付け内容より優先されます)
           </p>
           <form action={createInfluencersBulk} className="space-y-4">
             <Field label="プラットフォーム *">
@@ -86,11 +86,18 @@ export default function NewInfluencerPage() {
                 <option value="tiktok">TikTok</option>
               </Select>
             </Field>
-            <Field label="一覧データ *">
+            <Field label="CSVファイル">
+              <input
+                type="file"
+                name="csvFile"
+                accept=".csv,text/csv"
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-200"
+              />
+            </Field>
+            <Field label="または一覧データを貼り付け">
               <Textarea
                 name="bulk"
-                required
-                rows={12}
+                rows={10}
                 placeholder={"sample_user1,https://instagram.com/sample_user1,サンプル1,12000,2.1,暮らし\nsample_user2,https://instagram.com/sample_user2,サンプル2,8500,3.4,料理"}
               />
             </Field>

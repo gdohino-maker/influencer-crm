@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Sparkles, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateInfluencer, estimateAttributes } from "../actions";
+import { updateInfluencer, estimateAttributes, enrichFromInstagram } from "../actions";
 
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: "Instagram",
@@ -29,6 +29,7 @@ export default async function InfluencerDetailPage({ params }: { params: Promise
 
   const updateWithId = updateInfluencer.bind(null, influencerId);
   const estimateWithId = estimateAttributes.bind(null, influencerId);
+  const enrichIgWithId = enrichFromInstagram.bind(null, influencerId);
 
   return (
     <div>
@@ -46,12 +47,26 @@ export default async function InfluencerDetailPage({ params }: { params: Promise
         <Card className="col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">プロフィール編集</h2>
-            <form action={estimateWithId}>
-              <SubmitButton variant="ai" pendingText="推定中...">
-                <Sparkles className="size-3.5" /> AIでジャンル/属性を推定
-              </SubmitButton>
-            </form>
+            <div className="flex items-center gap-2">
+              {influencer.platform === "instagram" && (
+                <form action={enrichIgWithId}>
+                  <SubmitButton variant="secondary" pendingText="取得中...">
+                    Instagramから数値取得
+                  </SubmitButton>
+                </form>
+              )}
+              <form action={estimateWithId}>
+                <SubmitButton variant="ai" pendingText="推定中...">
+                  <Sparkles className="size-3.5" /> AIでジャンル/属性を推定
+                </SubmitButton>
+              </form>
+            </div>
           </div>
+          {influencer.platform === "instagram" && (
+            <p className="text-xs text-slate-500 -mt-2 mb-2">
+              公開ビジネス/クリエイターアカウントのみ数値取得可能です(個人アカウントや取得失敗時は手動入力してください)。
+            </p>
+          )}
           <p className="text-xs text-slate-500 -mt-2 mb-4">
             bio・既存タグをもとにGeminiがジャンルタグ・年代・フォロワー推定層を提案し、フォームに反映します(推定なので必ず確認してください)。
           </p>

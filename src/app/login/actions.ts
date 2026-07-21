@@ -1,25 +1,39 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { COOKIE_NAME, SESSION_TTL_SECONDS, createSessionToken } from "@/lib/session";
+import { isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/rate-limit";
 
-const COOKIE_NAME = "pf_auth";
+async function getClientKey() {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? "unknown";
+}
 
 export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/");
+  const clientKey = await getClientKey();
+
+  if (isRateLimited(clientKey)) {
+    redirect(`/login?error=ratelimit&next=${encodeURIComponent(next)}`);
+  }
 
   if (password !== process.env.APP_PASSWORD) {
+    recordFailedAttempt(clientKey);
     redirect(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
 
+  clearAttempts(clientKey);
+
+  const token = await createSessionToken();
   const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, password, {
+  cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 180, // 180日
+    maxAge: SESSION_TTL_SECONDS,
   });
 
   redirect(next.startsWith("/") ? next : "/");

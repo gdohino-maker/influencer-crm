@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { generateJson } from "@/lib/gemini";
+import { parseBrandAnalyticsCsv } from "@/lib/brand-analytics";
 import { Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -119,4 +120,37 @@ export async function generateDiscoveryKeywords(id: number) {
   const discoveryKeywords = result.keywords.map((k) => k.trim()).filter(Boolean).join(",");
   await prisma.brand.update({ where: { id }, data: { discoveryKeywords } });
   revalidatePath(`/brands/${id}`);
+}
+
+export async function importBrandSearchMetrics(brandId: number, formData: FormData) {
+  const file = formData.get("csvFile");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Amazon Brand AnalyticsのCSVファイルを選択してください");
+  }
+
+  const raw = Buffer.from(await file.arrayBuffer()).toString("utf-8");
+  const rows = parseBrandAnalyticsCsv(raw);
+  if (rows.length === 0) {
+    throw new Error("CSVから有効な行を読み取れませんでした");
+  }
+
+  for (const row of rows) {
+    const searchTerm = row.searchTerm ?? "";
+    await prisma.brandSearchMetric.upsert({
+      where: {
+        brandId_reportDate_searchTerm: { brandId, reportDate: row.reportDate, searchTerm },
+      },
+      create: {
+        brandId,
+        reportDate: row.reportDate,
+        searchTerm,
+        searchFrequencyRank: row.searchFrequencyRank,
+      },
+      update: {
+        searchFrequencyRank: row.searchFrequencyRank,
+      },
+    });
+  }
+
+  revalidatePath(`/brands/${brandId}`);
 }
