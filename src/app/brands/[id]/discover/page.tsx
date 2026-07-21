@@ -5,7 +5,7 @@ import { CopyButton } from "@/components/copy-button";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
 import { generateRecommendReasons } from "@/lib/recommend-reason";
-import { buildTikTokResearchPrompt } from "@/lib/tiktok-research-prompt";
+import { buildSnsResearchPrompt, type ResearchPlatform } from "@/lib/tiktok-research-prompt";
 import {
   ArrowLeft,
   Sparkles,
@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addYoutubeCandidate, decideRecommended, addQuickInfluencer, importTikTokResearch } from "./actions";
+import { addYoutubeCandidate, decideRecommended, addQuickInfluencer, importSnsResearch } from "./actions";
 import { generateDiscoveryKeywords } from "../../actions";
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -49,9 +49,10 @@ export default async function DiscoverPage({
     quickAdded?: string;
     quickError?: string;
     new?: string;
-    tiktokImported?: string;
-    tiktokSkipped?: string;
-    tiktokAddedToCampaign?: string;
+    snsImported?: string;
+    snsSkipped?: string;
+    snsAddedToCampaign?: string;
+    researchPlatform?: string;
   }>;
 }) {
   const { id } = await params;
@@ -119,8 +120,10 @@ export default async function DiscoverPage({
 
   const generateKeywordsWithId = generateDiscoveryKeywords.bind(null, brandId);
   const addQuickWithBrandId = addQuickInfluencer.bind(null, brandId);
-  const importTikTokWithBrandId = importTikTokResearch.bind(null, brandId);
-  const tiktokPrompt = buildTikTokResearchPrompt(brand);
+  const importSnsWithBrandId = importSnsResearch.bind(null, brandId);
+  const researchPlatform: ResearchPlatform = sp.researchPlatform === "instagram" ? "instagram" : "tiktok";
+  const researchPrompt = buildSnsResearchPrompt(brand, researchPlatform);
+  const researchQsBase = `${selectedCampaignId ? `campaignId=${selectedCampaignId}&` : ""}`;
 
   return (
     <div>
@@ -161,11 +164,11 @@ export default async function DiscoverPage({
           URLを認識できませんでした。Instagram/X(Twitter)/TikTokのプロフィールURL(例: https://www.instagram.com/username)を貼り付けてください。
         </div>
       )}
-      {sp.tiktokImported != null && (
+      {sp.snsImported != null && (
         <div className="mb-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 flex items-center gap-2">
           <CheckCircle2 className="size-4 shrink-0" />
-          TikTokリサーチ結果を取り込みました: 新規登録 {sp.tiktokImported}件 / 既存スキップ {sp.tiktokSkipped}件
-          {selectedCampaignId ? ` / 候補に追加 ${sp.tiktokAddedToCampaign}件` : ""}
+          リサーチ結果を取り込みました: 新規登録 {sp.snsImported}件 / 既存スキップ {sp.snsSkipped}件
+          {selectedCampaignId ? ` / 候補に追加 ${sp.snsAddedToCampaign}件` : ""}
         </div>
       )}
 
@@ -400,33 +403,49 @@ export default async function DiscoverPage({
         </>
       )}
 
-      {/* TikTok探索(Claude for Chrome等でリサーチ) */}
+      {/* SNS探索(Claude for Chrome等でリサーチ) */}
       <SectionTitle>
         <span className="inline-flex items-center gap-1.5">
-          <Bot className="size-4 text-slate-400" /> TikTok探索(Claude for Chromeでリサーチ)
+          <Bot className="size-4 text-slate-400" /> TikTok/Instagram探索(Claude for Chromeでリサーチ)
         </span>
       </SectionTitle>
       <p className="text-xs text-slate-500 mb-3">
-        TikTokには自動検索APIが無いため、ブラウザ操作エージェント(Claude for Chrome等)にブラウザ上のTikTokを巡回してもらい、候補をCSVで受け取ります。下のプロンプトをコピーしてTikTokを開いたブラウザのClaudeに実行させ、出てきたCSVを下の欄に貼り戻してください。
+        TikTok/Instagramには自動検索APIが無いため、ブラウザ操作エージェント(Claude for Chrome等)にブラウザ上を巡回してもらい、候補をCSVで受け取ります(スクレイピングではなく、人間と同じ操作でブラウジングする想定です)。下のプロンプトをコピーして対象SNSを開いたブラウザのClaudeに実行させ、出てきたCSVを下の欄に貼り戻してください。
       </p>
+      <div className="flex gap-2 mb-3">
+        {(["tiktok", "instagram"] as ResearchPlatform[]).map((p) => (
+          <Link
+            key={p}
+            href={`/brands/${brandId}/discover?${researchQsBase}researchPlatform=${p}`}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              p === researchPlatform
+                ? "bg-indigo-600 border-indigo-600 text-white"
+                : "bg-white border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600"
+            }`}
+          >
+            {p === "tiktok" ? "TikTok" : "Instagram"}
+          </Link>
+        ))}
+      </div>
       <div className="grid grid-cols-2 gap-4 mb-10">
         <Card>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium text-slate-500">Claude for Chrome用プロンプト(ブランド条件から自動生成)</p>
-            <CopyButton text={tiktokPrompt} label="プロンプトをコピー" />
+            <CopyButton text={researchPrompt} label="プロンプトをコピー" />
           </div>
-          <Textarea readOnly rows={16} defaultValue={tiktokPrompt} className="bg-slate-50 text-xs font-mono" />
+          <Textarea readOnly rows={16} defaultValue={researchPrompt} className="bg-slate-50 text-xs font-mono" />
         </Card>
         <Card>
-          <p className="text-xs font-medium text-slate-500 mb-2">結果CSVを貼り戻す</p>
-          <form action={importTikTokWithBrandId} className="flex flex-col gap-3 h-full">
+          <p className="text-xs font-medium text-slate-500 mb-2">結果CSVを貼り戻す({researchPlatform === "tiktok" ? "TikTok" : "Instagram"})</p>
+          <form action={importSnsWithBrandId} className="flex flex-col gap-3 h-full">
+            <input type="hidden" name="platform" value={researchPlatform} />
             <Textarea
               name="csv"
               required
               rows={16}
               className="text-xs font-mono flex-1"
               placeholder={
-                "username,url,displayName,followers,totalLikes,postsCount,avgView,avgLike,avgEngagement,avgComment,videoAvgScore,postFreqWeek,lastPublished,contact,notes\nkurashi_no_hibi,https://tiktok.com/@kurashi_no_hibi,みどりの暮らし,84000,1200000,320,120000,4100,4600,180,7.5,4,2026-07-10,mail@example.com,暮らし系で世界観が良い"
+                "username,url,displayName,followers,totalLikes,postsCount,avgView,avgLike,avgEngagement,avgComment,videoAvgScore,postFreqWeek,lastPublished,contact,notes\nkurashi_no_hibi,https://example.com/@kurashi_no_hibi,みどりの暮らし,84000,1200000,320,120000,4100,4600,180,7.5,4,2026-07-10,mail@example.com,暮らし系で世界観が良い"
               }
             />
             {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}

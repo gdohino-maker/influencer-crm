@@ -91,26 +91,27 @@ export async function addQuickInfluencer(brandId: number, formData: FormData) {
   redirect(`/brands/${brandId}/discover?quickAdded=${encodeURIComponent(influencer.username)}${qsCampaign}`);
 }
 
-// Claude for Chrome等でTikTokをリサーチした結果のCSVを貼り付けて一括登録する(任意で選択中キャンペーンにも追加)
-export async function importTikTokResearch(brandId: number, formData: FormData) {
+// Claude for Chrome等でSNS(TikTok/Instagram)をリサーチした結果のCSVを貼り付けて一括登録する(任意で選択中キャンペーンにも追加)
+export async function importSnsResearch(brandId: number, formData: FormData) {
+  const platform = String(formData.get("platform") ?? "tiktok").trim();
   const raw = String(formData.get("csv") ?? "").trim();
   const campaignIdRaw = String(formData.get("campaignId") ?? "").trim();
   const qsCampaign = campaignIdRaw ? `&campaignId=${campaignIdRaw}` : "";
 
   if (!raw) throw new Error("CSVを貼り付けてください");
 
-  const rows = parseInfluencerCsvRows("tiktok", raw);
+  const rows = parseInfluencerCsvRows(platform, raw);
   let created = 0;
   let skipped = 0;
   let addedToCampaign = 0;
 
   for (const row of rows) {
     let influencer = await prisma.influencer.findUnique({
-      where: { platform_username: { platform: "tiktok", username: row.username } },
+      where: { platform_username: { platform, username: row.username } },
     });
 
     if (!influencer) {
-      influencer = await prisma.influencer.create({ data: { platform: "tiktok", ...row } });
+      influencer = await prisma.influencer.create({ data: { platform, ...row } });
       created++;
     } else {
       skipped++;
@@ -131,7 +132,7 @@ export async function importTikTokResearch(brandId: number, formData: FormData) 
   revalidatePath("/influencers");
   revalidatePath(`/brands/${brandId}/discover`);
   redirect(
-    `/brands/${brandId}/discover?tiktokImported=${created}&tiktokSkipped=${skipped}&tiktokAddedToCampaign=${addedToCampaign}${qsCampaign}`
+    `/brands/${brandId}/discover?snsImported=${created}&snsSkipped=${skipped}&snsAddedToCampaign=${addedToCampaign}${qsCampaign}`
   );
 }
 
