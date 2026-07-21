@@ -160,6 +160,12 @@ export default async function DashboardPage() {
                     <p className="text-sm mt-2">
                       候補 {c.members.length} / 投稿済 {posted} / 二次利用可 {secondaryUse}
                     </p>
+                    <Link
+                      href={`/brands/${c.brandId}/discover?campaignId=${c.id}`}
+                      className="text-xs text-indigo-600 hover:underline mt-2 inline-block"
+                    >
+                      候補を探す →
+                    </Link>
                   </Card>
                 );
               })}

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
-import { Card, PageTitle, Input, Select, StatusBadge, Badge, SectionTitle, Field } from "@/components/ui";
+import { Card, PageTitle, LinkButton, Input, Select, StatusBadge, Badge, SectionTitle, Field } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
-import { Sparkles, ArrowLeft, RefreshCw, FileText, X } from "lucide-react";
+import { Sparkles, ArrowLeft, RefreshCw, FileText, X, Search } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Influencer } from "@prisma/client";
@@ -79,12 +79,19 @@ export default async function CampaignDetailPage({
         title={campaign.name}
         subtitle={`${campaign.brand.client.name} / ${campaign.brand.name}`}
         action={
-          <Link
-            href={`/brands/${campaign.brandId}`}
-            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
-          >
-            <ArrowLeft className="size-4" /> {campaign.brand.name}
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href={`/brands/${campaign.brandId}`}
+              className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+            >
+              <ArrowLeft className="size-4" /> {campaign.brand.name}
+            </Link>
+            <LinkButton href={`/brands/${campaign.brandId}/discover?campaignId=${campaignId}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <Search className="size-4" /> 候補を探す
+              </span>
+            </LinkButton>
+          </div>
         }
       />
 
