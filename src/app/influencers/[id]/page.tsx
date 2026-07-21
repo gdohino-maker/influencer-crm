@@ -122,6 +122,39 @@ export default async function InfluencerDetailPage({ params }: { params: Promise
             </Field>
 
             <div className="border-t pt-4 mt-2">
+              <p className="text-xs font-medium text-slate-500 mb-3">TikTok等・外部リサーチの詳細実績</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="総いいね数">
+                  <Input name="totalLikes" type="number" defaultValue={influencer.totalLikes ?? ""} />
+                </Field>
+                <Field label="平均再生回数">
+                  <Input name="avgView" type="number" defaultValue={influencer.avgView ?? ""} />
+                </Field>
+                <Field label="平均エンゲージメント数">
+                  <Input name="avgEngagement" type="number" defaultValue={influencer.avgEngagement ?? ""} />
+                </Field>
+                <Field label="動画平均スコア(10点満点)">
+                  <Input name="videoAvgScore" type="number" step="0.1" defaultValue={influencer.videoAvgScore ?? ""} />
+                </Field>
+                <Field label="投稿頻度(件/週)">
+                  <Input name="postFreqWeek" type="number" step="0.1" defaultValue={influencer.postFreqWeek ?? ""} />
+                </Field>
+                <Field label="最終投稿日">
+                  <Input
+                    name="lastPublishedAt"
+                    type="date"
+                    defaultValue={influencer.lastPublishedAt ? influencer.lastPublishedAt.toISOString().slice(0, 10) : ""}
+                  />
+                </Field>
+              </div>
+              <div className="mt-4">
+                <Field label="問い合わせ先(メール or URL)">
+                  <Input name="contact" defaultValue={influencer.contact ?? ""} placeholder="example@mail.com または https://..." />
+                </Field>
+              </div>
+            </div>
+
+            <div className="border-t pt-4 mt-2">
               <label className="flex items-center gap-2 text-sm font-medium text-red-700">
                 <input type="checkbox" name="isBlacklisted" defaultChecked={influencer.isBlacklisted} />
                 全ブランド共通ブラックリストに登録する

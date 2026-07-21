@@ -126,6 +126,15 @@ model Influencer {
   engagementRate Float?
   lastEnrichedAt DateTime?
 
+  // --- TikTok等・外部からブラウザで取得できる詳細実績(Claude for Chromeリサーチ用) ---
+  totalLikes     Int?
+  avgView        Int?
+  avgEngagement  Int?
+  videoAvgScore  Float?
+  postFreqWeek   Float?
+  lastPublishedAt DateTime?
+  contact        String?
+
   ageBand             String?
   audienceAgeGuess    String?
   audienceGenderGuess String?

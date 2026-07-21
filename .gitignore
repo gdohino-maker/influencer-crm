@@ -48,3 +48,6 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# imported business data exports (not for version control)
+influencer-crm-data*.json

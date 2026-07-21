@@ -58,6 +58,54 @@ export async function createInfluencer(formData: FormData) {
   redirect("/influencers");
 }
 
+// Claude for Chromeのリサーチ結果CSV(ヘッダー付き)の想定カラム名
+const RICH_CSV_HEADERS = [
+  "username",
+  "url",
+  "displayname",
+  "followers",
+  "totallikes",
+  "postscount",
+  "avgview",
+  "avglike",
+  "avgengagement",
+  "avgcomment",
+  "videoavgscore",
+  "postfreqweek",
+  "lastpublished",
+  "contact",
+  "notes",
+];
+
+function parseCsvLine(line: string): string[] {
+  // 簡易CSVパーサ(ダブルクォート囲み・エスケープに対応)
+  const cols: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      cols.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  cols.push(cur);
+  return cols.map((c) => c.trim());
+}
+
 export async function createInfluencersBulk(formData: FormData) {
   const platform = String(formData.get("platform") ?? "").trim();
   const raw = await readBulkSource(formData);
@@ -71,13 +119,55 @@ export async function createInfluencersBulk(formData: FormData) {
   let created = 0;
   let skipped = 0;
 
-  for (const line of lines) {
-    // ヘッダー行はスキップ
-    if (/^username\s*,/i.test(line)) continue;
+  // 先頭行がリッチCSVのヘッダーか判定
+  const firstCols = lines.length > 0 ? parseCsvLine(lines[0]).map((c) => c.toLowerCase()) : [];
+  const isRichHeader = RICH_CSV_HEADERS.every((h) => firstCols.includes(h));
+  const dataLines = isRichHeader || /^username\s*,/i.test(lines[0] ?? "") ? lines.slice(1) : lines;
 
-    const cols = line.split(",").map((c) => c.trim());
-    const [username, url, displayName, followersStr, engagementRateStr, ...genreRest] = cols;
-    const genreTags = genreRest.join(",").trim();
+  for (const line of dataLines) {
+    const cols = parseCsvLine(line);
+
+    let username: string;
+    let url: string;
+    let displayName: string;
+    let followersStr: string;
+    let totalLikesStr = "";
+    let postsCountStr = "";
+    let avgViewStr = "";
+    let avgLikeStr = "";
+    let avgEngagementStr = "";
+    let avgCommentStr = "";
+    let videoAvgScoreStr = "";
+    let postFreqWeekStr = "";
+    let lastPublishedStr = "";
+    let contact = "";
+    let notes = "";
+    let genreTags = "";
+    let engagementRateStr = "";
+
+    if (isRichHeader) {
+      [
+        username,
+        url,
+        displayName,
+        followersStr,
+        totalLikesStr,
+        postsCountStr,
+        avgViewStr,
+        avgLikeStr,
+        avgEngagementStr,
+        avgCommentStr,
+        videoAvgScoreStr,
+        postFreqWeekStr,
+        lastPublishedStr,
+        contact,
+        notes,
+      ] = cols;
+    } else {
+      let genreRest: string[];
+      [username, url, displayName, followersStr, engagementRateStr, ...genreRest] = cols;
+      genreTags = genreRest.join(",").trim();
+    }
     if (!username) continue;
 
     const existing = await prisma.influencer.findUnique({
@@ -88,15 +178,33 @@ export async function createInfluencersBulk(formData: FormData) {
       continue;
     }
 
+    const avgLikeNum = avgLikeStr ? Number(avgLikeStr) : null;
+    const avgViewNum = avgViewStr ? Number(avgViewStr) : null;
+    const avgCommentNum = avgCommentStr ? Number(avgCommentStr) : null;
+    const followersNum = followersStr ? Number(followersStr) : null;
+    const computedEr =
+      avgLikeNum != null && avgCommentNum != null && followersNum ? ((avgLikeNum + avgCommentNum) / followersNum) * 100 : null;
+
     await prisma.influencer.create({
       data: {
         platform,
         username,
         url: url || `https://${platform}.com/${username}`,
         displayName: displayName || null,
-        followers: followersStr ? Number(followersStr) : null,
-        engagementRate: engagementRateStr ? Number(engagementRateStr) : null,
+        followers: followersNum,
+        engagementRate: engagementRateStr ? Number(engagementRateStr) : computedEr,
         genreTags: genreTags || null,
+        totalLikes: totalLikesStr ? Number(totalLikesStr) : null,
+        postsCount: postsCountStr ? Number(postsCountStr) : null,
+        avgView: avgViewNum,
+        avgLike: avgLikeNum,
+        avgEngagement: avgEngagementStr ? Number(avgEngagementStr) : null,
+        avgComment: avgCommentNum,
+        videoAvgScore: videoAvgScoreStr ? Number(videoAvgScoreStr) : null,
+        postFreqWeek: postFreqWeekStr ? Number(postFreqWeekStr) : null,
+        lastPublishedAt: lastPublishedStr ? new Date(lastPublishedStr) : null,
+        contact: contact || null,
+        notes: notes || null,
       },
     });
     created++;
@@ -115,6 +223,13 @@ export async function updateInfluencer(id: number, formData: FormData) {
   const avgLikeRaw = String(formData.get("avgLike") ?? "").trim();
   const avgCommentRaw = String(formData.get("avgComment") ?? "").trim();
   const engagementRateRaw = String(formData.get("engagementRate") ?? "").trim();
+  const totalLikesRaw = String(formData.get("totalLikes") ?? "").trim();
+  const avgViewRaw = String(formData.get("avgView") ?? "").trim();
+  const avgEngagementRaw = String(formData.get("avgEngagement") ?? "").trim();
+  const videoAvgScoreRaw = String(formData.get("videoAvgScore") ?? "").trim();
+  const postFreqWeekRaw = String(formData.get("postFreqWeek") ?? "").trim();
+  const lastPublishedAtRaw = String(formData.get("lastPublishedAt") ?? "").trim();
+  const contact = String(formData.get("contact") ?? "").trim();
   const ageBand = String(formData.get("ageBand") ?? "").trim();
   const audienceAgeGuess = String(formData.get("audienceAgeGuess") ?? "").trim();
   const audienceGenderGuess = String(formData.get("audienceGenderGuess") ?? "").trim();
@@ -136,6 +251,13 @@ export async function updateInfluencer(id: number, formData: FormData) {
       avgLike: avgLikeRaw ? Number(avgLikeRaw) : null,
       avgComment: avgCommentRaw ? Number(avgCommentRaw) : null,
       engagementRate: engagementRateRaw ? Number(engagementRateRaw) : null,
+      totalLikes: totalLikesRaw ? Number(totalLikesRaw) : null,
+      avgView: avgViewRaw ? Number(avgViewRaw) : null,
+      avgEngagement: avgEngagementRaw ? Number(avgEngagementRaw) : null,
+      videoAvgScore: videoAvgScoreRaw ? Number(videoAvgScoreRaw) : null,
+      postFreqWeek: postFreqWeekRaw ? Number(postFreqWeekRaw) : null,
+      lastPublishedAt: lastPublishedAtRaw ? new Date(lastPublishedAtRaw) : null,
+      contact: contact || null,
       ageBand: ageBand || null,
       audienceAgeGuess: audienceAgeGuess || null,
       audienceGenderGuess: audienceGenderGuess || null,

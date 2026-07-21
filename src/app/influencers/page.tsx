@@ -126,6 +126,7 @@ export default async function InfluencersPage({
               <th className="text-left px-4 py-2">表示名</th>
               <th className="text-right px-4 py-2">フォロワー</th>
               <th className="text-right px-4 py-2">ER</th>
+              <th className="text-right px-4 py-2">平均再生</th>
               <th className="text-left px-4 py-2">ジャンル</th>
               <th className="text-right px-4 py-2">起用回数</th>
               <th className="text-right px-4 py-2">平均リーチ</th>
@@ -146,6 +147,7 @@ export default async function InfluencersPage({
                 <td className="px-4 py-2 text-slate-600">{inf.displayName ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.followers?.toLocaleString() ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.engagementRate ? `${inf.engagementRate}%` : "-"}</td>
+                <td className="px-4 py-2 text-right text-slate-700">{inf.avgView?.toLocaleString() ?? "-"}</td>
                 <td className="px-4 py-2 text-slate-600">{inf.genreTags ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.assignmentCount}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.avgReach?.toLocaleString() ?? "-"}</td>
@@ -158,7 +160,7 @@ export default async function InfluencersPage({
             ))}
             {withStats.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
                   該当するインフルエンサーがいません
                 </td>
               </tr>

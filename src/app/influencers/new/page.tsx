@@ -73,17 +73,23 @@ export default function NewInfluencerPage() {
           <p className="text-xs text-slate-500 mb-4">
             1行1件、カンマ区切りで貼り付けるか、CSVファイル(utf-8-sig対応)をアップロードしてください。
             <br />
-            形式: <code className="bg-slate-100 px-1">username,url,表示名,フォロワー数,ER,ジャンルタグ</code>
+            簡易形式: <code className="bg-slate-100 px-1">username,url,表示名,フォロワー数,ER,ジャンルタグ</code>
+            <br />
+            リサーチ形式(Claude for Chrome等で調査したCSVをそのまま貼り付け可能):
+            <br />
+            <code className="bg-slate-100 px-1 text-[11px]">
+              username,url,displayName,followers,totalLikes,postsCount,avgView,avgLike,avgEngagement,avgComment,videoAvgScore,postFreqWeek,lastPublished,contact,notes
+            </code>
             <br />
             (usernameのみ必須。既に登録済のusernameはスキップされます。ファイルを選択した場合は貼り付け内容より優先されます)
           </p>
           <form action={createInfluencersBulk} className="space-y-4">
             <Field label="プラットフォーム *">
-              <Select name="platform" required defaultValue="instagram">
+              <Select name="platform" required defaultValue="tiktok">
+                <option value="tiktok">TikTok</option>
                 <option value="instagram">Instagram</option>
                 <option value="youtube">YouTube</option>
                 <option value="x">X</option>
-                <option value="tiktok">TikTok</option>
               </Select>
             </Field>
             <Field label="CSVファイル">
