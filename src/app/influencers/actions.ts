@@ -3,17 +3,10 @@
 import { prisma } from "@/lib/db";
 import { generateJson } from "@/lib/gemini";
 import { fetchInstagramBusinessDiscovery } from "@/lib/instagram";
+import { parseInfluencerCsvRows, stripBom } from "@/lib/csv-import";
 import { Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-
-function stripBom(text: string): string {
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-}
-
-function normalizeNfkc(text: string): string {
-  return text.normalize("NFKC");
-}
 
 async function readBulkSource(formData: FormData): Promise<string> {
   const file = formData.get("csvFile");
@@ -58,153 +51,29 @@ export async function createInfluencer(formData: FormData) {
   redirect("/influencers");
 }
 
-// Claude for Chromeのリサーチ結果CSV(ヘッダー付き)の想定カラム名
-const RICH_CSV_HEADERS = [
-  "username",
-  "url",
-  "displayname",
-  "followers",
-  "totallikes",
-  "postscount",
-  "avgview",
-  "avglike",
-  "avgengagement",
-  "avgcomment",
-  "videoavgscore",
-  "postfreqweek",
-  "lastpublished",
-  "contact",
-  "notes",
-];
-
-function parseCsvLine(line: string): string[] {
-  // 簡易CSVパーサ(ダブルクォート囲み・エスケープに対応)
-  const cols: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        cur += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      cols.push(cur);
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  cols.push(cur);
-  return cols.map((c) => c.trim());
-}
-
 export async function createInfluencersBulk(formData: FormData) {
   const platform = String(formData.get("platform") ?? "").trim();
   const raw = await readBulkSource(formData);
   if (!platform || !raw.trim()) throw new Error("プラットフォームと一覧データ(貼り付けまたはCSVファイル)は必須です");
 
-  const lines = raw
-    .split(/\r?\n/)
-    .map((l) => normalizeNfkc(l.trim()))
-    .filter(Boolean);
+  const rows = parseInfluencerCsvRows(platform, raw);
 
   let created = 0;
   let skipped = 0;
 
-  // 先頭行がリッチCSVのヘッダーか判定
-  const firstCols = lines.length > 0 ? parseCsvLine(lines[0]).map((c) => c.toLowerCase()) : [];
-  const isRichHeader = RICH_CSV_HEADERS.every((h) => firstCols.includes(h));
-  const dataLines = isRichHeader || /^username\s*,/i.test(lines[0] ?? "") ? lines.slice(1) : lines;
-
-  for (const line of dataLines) {
-    const cols = parseCsvLine(line);
-
-    let username: string;
-    let url: string;
-    let displayName: string;
-    let followersStr: string;
-    let totalLikesStr = "";
-    let postsCountStr = "";
-    let avgViewStr = "";
-    let avgLikeStr = "";
-    let avgEngagementStr = "";
-    let avgCommentStr = "";
-    let videoAvgScoreStr = "";
-    let postFreqWeekStr = "";
-    let lastPublishedStr = "";
-    let contact = "";
-    let notes = "";
-    let genreTags = "";
-    let engagementRateStr = "";
-
-    if (isRichHeader) {
-      [
-        username,
-        url,
-        displayName,
-        followersStr,
-        totalLikesStr,
-        postsCountStr,
-        avgViewStr,
-        avgLikeStr,
-        avgEngagementStr,
-        avgCommentStr,
-        videoAvgScoreStr,
-        postFreqWeekStr,
-        lastPublishedStr,
-        contact,
-        notes,
-      ] = cols;
-    } else {
-      let genreRest: string[];
-      [username, url, displayName, followersStr, engagementRateStr, ...genreRest] = cols;
-      genreTags = genreRest.join(",").trim();
-    }
-    if (!username) continue;
-
+  for (const row of rows) {
     const existing = await prisma.influencer.findUnique({
-      where: { platform_username: { platform, username } },
+      where: { platform_username: { platform, username: row.username } },
     });
     if (existing) {
       skipped++;
       continue;
     }
 
-    const avgLikeNum = avgLikeStr ? Number(avgLikeStr) : null;
-    const avgViewNum = avgViewStr ? Number(avgViewStr) : null;
-    const avgCommentNum = avgCommentStr ? Number(avgCommentStr) : null;
-    const followersNum = followersStr ? Number(followersStr) : null;
-    const computedEr =
-      avgLikeNum != null && avgCommentNum != null && followersNum ? ((avgLikeNum + avgCommentNum) / followersNum) * 100 : null;
-
     await prisma.influencer.create({
       data: {
         platform,
-        username,
-        url: url || `https://${platform}.com/${username}`,
-        displayName: displayName || null,
-        followers: followersNum,
-        engagementRate: engagementRateStr ? Number(engagementRateStr) : computedEr,
-        genreTags: genreTags || null,
-        totalLikes: totalLikesStr ? Number(totalLikesStr) : null,
-        postsCount: postsCountStr ? Number(postsCountStr) : null,
-        avgView: avgViewNum,
-        avgLike: avgLikeNum,
-        avgEngagement: avgEngagementStr ? Number(avgEngagementStr) : null,
-        avgComment: avgCommentNum,
-        videoAvgScore: videoAvgScoreStr ? Number(videoAvgScoreStr) : null,
-        postFreqWeek: postFreqWeekStr ? Number(postFreqWeekStr) : null,
-        lastPublishedAt: lastPublishedStr ? new Date(lastPublishedStr) : null,
-        contact: contact || null,
-        notes: notes || null,
+        ...row,
       },
     });
     created++;

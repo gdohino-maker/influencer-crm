@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { parseSocialUrl } from "@/lib/parse-social-url";
+import { parseInfluencerCsvRows } from "@/lib/csv-import";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -88,6 +89,50 @@ export async function addQuickInfluencer(brandId: number, formData: FormData) {
 
   revalidatePath("/influencers");
   redirect(`/brands/${brandId}/discover?quickAdded=${encodeURIComponent(influencer.username)}${qsCampaign}`);
+}
+
+// Claude for Chrome等でTikTokをリサーチした結果のCSVを貼り付けて一括登録する(任意で選択中キャンペーンにも追加)
+export async function importTikTokResearch(brandId: number, formData: FormData) {
+  const raw = String(formData.get("csv") ?? "").trim();
+  const campaignIdRaw = String(formData.get("campaignId") ?? "").trim();
+  const qsCampaign = campaignIdRaw ? `&campaignId=${campaignIdRaw}` : "";
+
+  if (!raw) throw new Error("CSVを貼り付けてください");
+
+  const rows = parseInfluencerCsvRows("tiktok", raw);
+  let created = 0;
+  let skipped = 0;
+  let addedToCampaign = 0;
+
+  for (const row of rows) {
+    let influencer = await prisma.influencer.findUnique({
+      where: { platform_username: { platform: "tiktok", username: row.username } },
+    });
+
+    if (!influencer) {
+      influencer = await prisma.influencer.create({ data: { platform: "tiktok", ...row } });
+      created++;
+    } else {
+      skipped++;
+    }
+
+    if (campaignIdRaw) {
+      const campaignId = Number(campaignIdRaw);
+      const existing = await prisma.campaignInfluencer.findUnique({
+        where: { campaignId_influencerId: { campaignId, influencerId: influencer.id } },
+      });
+      if (!existing) {
+        await prisma.campaignInfluencer.create({ data: { campaignId, influencerId: influencer.id } });
+        addedToCampaign++;
+      }
+    }
+  }
+
+  revalidatePath("/influencers");
+  revalidatePath(`/brands/${brandId}/discover`);
+  redirect(
+    `/brands/${brandId}/discover?tiktokImported=${created}&tiktokSkipped=${skipped}&tiktokAddedToCampaign=${addedToCampaign}${qsCampaign}`
+  );
 }
 
 // マスタ推薦のインフルエンサーを「決定」し、そのままメール文(DM下書き)作成画面へ遷移する
