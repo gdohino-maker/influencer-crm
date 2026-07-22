@@ -505,7 +505,13 @@ export default async function DiscoverPage({
             <p className="text-xs font-medium text-slate-500">Claude for Chrome用プロンプト(ブランド条件から自動生成)</p>
             <CopyButton text={researchPrompt} label="プロンプトをコピー" />
           </div>
-          <Textarea readOnly rows={16} defaultValue={researchPrompt} className="bg-slate-50 text-xs font-mono" />
+          <Textarea
+            key={researchPlatform}
+            readOnly
+            rows={16}
+            defaultValue={researchPrompt}
+            className="bg-slate-50 text-xs font-mono"
+          />
         </Card>
         <Card>
           <p className="text-xs font-medium text-slate-500 mb-2">結果CSVを貼り戻す({researchPlatform === "tiktok" ? "TikTok" : "Instagram"})</p>
