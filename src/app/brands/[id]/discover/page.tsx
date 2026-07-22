@@ -5,7 +5,7 @@ import { CopyButton } from "@/components/copy-button";
 import { CsvDropzone } from "@/components/csv-dropzone";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
-import { generateRecommendReasons, generateYoutubeReasons } from "@/lib/recommend-reason";
+import { generateUnifiedReasons, type ReasonCandidate } from "@/lib/recommend-reason";
 import { buildSnsResearchPrompt, type ResearchPlatform } from "@/lib/tiktok-research-prompt";
 import {
   ArrowLeft,
@@ -37,6 +37,31 @@ const PLATFORM_VIEW_LABELS: Record<string, string> = {
   youtube: "YouTubeで見る",
   x: "Xで見る",
   tiktok: "TikTokで見る",
+};
+
+const MAX_UNIFIED_CANDIDATES = 20;
+const MAX_REASONED = 12;
+
+type UnifiedCandidate = {
+  key: string;
+  kind: "db" | "yt";
+  username: string;
+  displayName: string | null;
+  platform: string;
+  url: string;
+  avatarUrl: string | null;
+  followers: number | null;
+  score: number;
+  // db-only
+  influencerId?: number;
+  genreTags?: string | null;
+  audienceAgeGuess?: string | null;
+  audienceGenderGuess?: string | null;
+  engagementRate?: number | null;
+  bio?: string | null;
+  notes?: string | null;
+  // yt-only(未登録)
+  channel?: YoutubeChannelCandidate;
 };
 
 export default async function DiscoverPage({
@@ -87,28 +112,36 @@ export default async function DiscoverPage({
       )
     : new Set<number>();
 
-  const recommended = allInfluencers
+  const knownYoutubeUsernames = new Set(
+    allInfluencers.filter((i) => i.platform === "youtube").map((i) => i.username)
+  );
+
+  const dbCandidates: UnifiedCandidate[] = allInfluencers
     .map((inf) => ({ inf, score: recommendScore(inf, brand) }))
     .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 30);
+    .map(({ inf, score }) => ({
+      key: `db:${inf.id}`,
+      kind: "db" as const,
+      username: inf.username,
+      displayName: inf.displayName,
+      platform: inf.platform,
+      url: inf.url,
+      avatarUrl: inf.avatarUrl,
+      followers: inf.followers,
+      score,
+      influencerId: inf.id,
+      genreTags: inf.genreTags,
+      audienceAgeGuess: inf.audienceAgeGuess,
+      audienceGenderGuess: inf.audienceGenderGuess,
+      engagementRate: inf.engagementRate,
+      bio: inf.bio,
+      notes: inf.notes,
+    }));
 
-  let reasons = new Map<number, string>();
-  if (recommended.length > 0) {
-    try {
-      reasons = await generateRecommendReasons(
-        recommended.slice(0, 8).map((r) => r.inf),
-        brand
-      );
-    } catch {
-      // AI理由生成に失敗しても候補一覧の表示は継続する
-    }
-  }
-
-  // --- YouTube自動検索(要APIキー・複数キーワード選択可) ---
-  let ytResults: YoutubeChannelCandidate[] = [];
-  let ytFromCache = false;
+  // --- YouTube自動検索(要APIキー・複数キーワード選択可)。マスタ未登録の新規候補として合流させる ---
   let ytError: string | null = null;
+  let ytFromCache = false;
+  const ytCandidates: UnifiedCandidate[] = [];
   if (selectedYtKeywords.length > 0) {
     try {
       const seenChannelIds = new Set<string>();
@@ -118,7 +151,37 @@ export default async function DiscoverPage({
         for (const ch of r.results) {
           if (seenChannelIds.has(ch.channelId)) continue;
           seenChannelIds.add(ch.channelId);
-          ytResults.push(ch);
+          const username = ch.customUrl ? ch.customUrl.replace(/^@/, "") : ch.channelId;
+          if (knownYoutubeUsernames.has(username)) continue; // 既にマスタにいる人はdb側の候補として既出
+
+          const score = recommendScore(
+            {
+              isBlacklisted: false,
+              genreTags: null,
+              audienceAgeGuess: null,
+              audienceGenderGuess: null,
+              photoQuality: null,
+              prFrequency: null,
+              followers: ch.subscriberCount,
+              postsCount: ch.videoCount,
+            },
+            brand,
+            0.6 // キーワード自体がブランド条件から生成されているため、ジャンル一致に一定の確度を仮定する
+          );
+
+          ytCandidates.push({
+            key: `yt:${ch.channelId}`,
+            kind: "yt",
+            username,
+            displayName: ch.title,
+            platform: "youtube",
+            url: `https://www.youtube.com/channel/${ch.channelId}`,
+            avatarUrl: ch.thumbnailUrl,
+            followers: ch.subscriberCount,
+            score,
+            bio: ch.description ? ch.description.slice(0, 300) : null,
+            channel: ch,
+          });
         }
       }
     } catch (e) {
@@ -126,12 +189,26 @@ export default async function DiscoverPage({
     }
   }
 
-  let ytReasons = new Map<string, string>();
-  if (ytResults.length > 0) {
+  const unified = [...dbCandidates, ...ytCandidates].sort((a, b) => b.score - a.score).slice(0, MAX_UNIFIED_CANDIDATES);
+
+  let reasons = new Map<string, string>();
+  if (unified.length > 0) {
     try {
-      ytReasons = await generateYoutubeReasons(ytResults.slice(0, 10), brand);
+      const reasonCandidates: ReasonCandidate[] = unified.slice(0, MAX_REASONED).map((c) => ({
+        key: c.key,
+        username: c.username,
+        platform: c.platform,
+        genreTags: c.genreTags,
+        audienceAgeGuess: c.audienceAgeGuess,
+        audienceGenderGuess: c.audienceGenderGuess,
+        followers: c.followers,
+        engagementRate: c.engagementRate,
+        bio: c.bio,
+        notes: c.notes,
+      }));
+      reasons = await generateUnifiedReasons(reasonCandidates, brand);
     } catch {
-      // AI理由生成に失敗しても検索結果の表示は継続する
+      // AI理由生成に失敗しても候補一覧の表示は継続する
     }
   }
 
@@ -185,7 +262,7 @@ export default async function DiscoverPage({
         <div className="mb-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 flex items-center gap-2">
           <CheckCircle2 className="size-4 shrink-0" />
           リサーチ結果を取り込みました: 新規登録 {sp.snsImported}件 / 既存スキップ {sp.snsSkipped}件
-          {selectedCampaignId ? ` / 候補に追加 ${sp.snsAddedToCampaign}件` : ""}
+          {selectedCampaignId ? ` / 候補に追加 ${sp.snsAddedToCampaign}件` : ""}。取り込んだ人も下の「おすすめの候補」にすぐ反映されます。
         </div>
       )}
 
@@ -216,113 +293,16 @@ export default async function DiscoverPage({
         )}
       </Card>
 
-      {/* マスタ推薦(メイン結果) */}
+      {/* YouTube検索キーワード(任意・複数選択可) */}
       <SectionTitle>
         <span className="inline-flex items-center gap-1.5">
-          <Users2 className="size-4 text-slate-400" /> おすすめの候補
+          <SquarePlay className="size-4 text-slate-400" /> YouTubeキーワードを追加で検索(要APIキー・任意)
         </span>
       </SectionTitle>
-      <p className="text-xs text-slate-500 mb-3">
-        全社のインフルエンサーマスタから、このブランドのターゲット年齢層・性別・ジャンルに近い人を自動で並べています。上位{Math.min(
-          8,
-          recommended.length
-        )}
-        件はAIが選定理由も生成しています。
-      </p>
-      {recommended.length === 0 && (
-        <EmptyState>
-          一致する候補がまだありません。マスタにジャンルタグ等の属性が入っている人が少ないか、条件に合う人がいません。
-          <br />
-          <Link href="/influencers" className="underline">
-            インフルエンサーマスタ
-          </Link>
-          で属性を登録するか、下のYouTube自動検索で新規発掘してください。
-        </EmptyState>
-      )}
-      <div className="grid grid-cols-2 gap-3 mb-10">
-        {recommended.map(({ inf, score }) => {
-          const alreadyAdded = selectedCampaignId ? existingMemberIds.has(inf.id) : false;
-          const decideWithBrandId = decideRecommended.bind(null, brandId);
-          const reason = reasons.get(inf.id);
-          const initial = (inf.displayName ?? inf.username).slice(0, 1).toUpperCase();
-          return (
-            <Card key={inf.id} className="flex flex-col gap-3">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`size-11 rounded-full shrink-0 flex items-center justify-center text-white font-semibold ${
-                    PLATFORM_COLORS[inf.platform] ?? "bg-slate-400"
-                  }`}
-                >
-                  {initial}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900 truncate">@{inf.username}</span>
-                    <Badge color="neutral">{inf.platform}</Badge>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {inf.followers ? `フォロワー ${inf.followers.toLocaleString()}` : "フォロワー数不明"} ・ 一致度 {score.toFixed(0)}
-                  </p>
-                </div>
-              </div>
-
-              {reason ? (
-                <p className="text-sm text-indigo-900 bg-indigo-50 rounded-lg px-3 py-2 flex items-start gap-1.5">
-                  <Sparkles className="size-3.5 shrink-0 mt-0.5 text-indigo-500" />
-                  {reason}
-                </p>
-              ) : (
-                <p className="text-xs text-slate-500">
-                  {inf.genreTags ?? "ジャンル未設定"} ・ フォロワー推定層: {inf.audienceAgeGuess ?? "-"} / {inf.audienceGenderGuess ?? "-"}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between gap-2 mt-auto pt-1">
-                <a
-                  href={inf.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600"
-                >
-                  <ExternalLink className="size-3.5" />
-                  {PLATFORM_VIEW_LABELS[inf.platform] ?? "プロフィールを見る"}
-                </a>
-
-                {alreadyAdded ? (
-                  <Link
-                    href={`/campaigns/${selectedCampaignId}`}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-md"
-                  >
-                    <Check className="size-3.5" /> 決定済み
-                  </Link>
-                ) : selectedCampaignId ? (
-                  <form action={decideWithBrandId}>
-                    <input type="hidden" name="influencerId" value={inf.id} />
-                    <input type="hidden" name="campaignId" value={selectedCampaignId} />
-                    <SubmitButton size="sm" pendingText="処理中...">
-                      決定する
-                    </SubmitButton>
-                  </form>
-                ) : (
-                  <span className="text-xs text-slate-400">キャンペーン未選択</span>
-                )}
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* YouTube自動検索 */}
-      <SectionTitle>
-        <span className="inline-flex items-center gap-1.5">
-          <SquarePlay className="size-4 text-slate-400" /> YouTube自動検索(要APIキー)
-        </span>
-      </SectionTitle>
-
       <Card className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-slate-500">
-            探索キーワード(ブランド情報からGeminiが自動生成)。キーワードをクリックするとYouTubeチャンネルを検索します。
+            探索キーワード(ブランド情報からGeminiが自動生成)。複数選択して検索すると、下の「おすすめの候補」に新規発見分として合流します。
           </p>
           <form action={generateKeywordsWithId}>
             <SubmitButton variant="ai" size="sm" pendingText="生成中...">
@@ -371,69 +351,129 @@ export default async function DiscoverPage({
         </div>
       )}
 
-      {selectedYtKeywords.length > 0 && !ytError && (
-        <>
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <h3 className="font-medium text-slate-700">
-              「{selectedYtKeywords.join("」「")}」の検索結果 ({ytResults.length}件)
-            </h3>
-            {ytFromCache && (
-              <Badge color="yellow">
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3" /> 一部24hキャッシュ
-                </span>
-              </Badge>
-            )}
-          </div>
-          {ytResults.length === 0 && <EmptyState>該当するチャンネルが見つかりませんでした。</EmptyState>}
-          <div className="space-y-2 mb-6">
-            {ytResults.map((ch) => {
-              const addWithBrandId = addYoutubeCandidate.bind(null, brandId);
-              const reason = ytReasons.get(ch.channelId);
-              return (
-                <Card key={ch.channelId} className="flex items-center justify-between py-3 gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {ch.thumbnailUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={ch.thumbnailUrl} alt="" className="size-10 rounded-full shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <a
-                        href={`https://www.youtube.com/channel/${ch.channelId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-slate-900 hover:text-indigo-600"
-                      >
-                        {ch.title}
-                      </a>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        登録者数 {ch.subscriberCount?.toLocaleString() ?? "非公開"} ・ 動画数 {ch.videoCount ?? "-"}
-                      </p>
-                      {reason && (
-                        <p className="text-xs text-indigo-900 bg-indigo-50 rounded px-2 py-1 mt-1.5 flex items-start gap-1">
-                          <Sparkles className="size-3 shrink-0 mt-0.5 text-indigo-500" /> {reason}
-                        </p>
-                      )}
-                    </div>
+      {/* おすすめの候補(マスタ推薦+YouTube新規発見を統合・スコア順) */}
+      <SectionTitle>
+        <span className="inline-flex items-center gap-1.5">
+          <Users2 className="size-4 text-slate-400" /> おすすめの候補(上位{Math.min(MAX_UNIFIED_CANDIDATES, unified.length)}件)
+        </span>
+      </SectionTitle>
+      <p className="text-xs text-slate-500 mb-3">
+        全社のインフルエンサーマスタからの推薦{selectedYtKeywords.length > 0 ? "と、上のYouTube検索で新たに見つかった人" : ""}
+        を、一致度スコア順に1つのリストにまとめています。上位{Math.min(MAX_REASONED, unified.length)}件はAIが選定理由も生成しています。
+        {ytFromCache && (
+          <Badge color="yellow">
+            <span className="inline-flex items-center gap-1 ml-1">
+              <Clock className="size-3" /> 一部24hキャッシュ
+            </span>
+          </Badge>
+        )}
+      </p>
+      {unified.length === 0 && (
+        <EmptyState>
+          一致する候補がまだありません。マスタにジャンルタグ等の属性が入っている人が少ないか、条件に合う人がいません。
+          <br />
+          <Link href="/influencers" className="underline">
+            インフルエンサーマスタ
+          </Link>
+          で属性を登録するか、上のYouTubeキーワード検索で新規発掘してください。
+        </EmptyState>
+      )}
+      <div className="grid grid-cols-2 gap-3 mb-10">
+        {unified.map((c) => {
+          const alreadyAdded = c.kind === "db" && selectedCampaignId ? existingMemberIds.has(c.influencerId!) : false;
+          const decideWithBrandId = decideRecommended.bind(null, brandId);
+          const addYtWithBrandId = addYoutubeCandidate.bind(null, brandId);
+          const reason = reasons.get(c.key);
+          const initial = (c.displayName ?? c.username).slice(0, 1).toUpperCase();
+
+          return (
+            <Card key={c.key} className="flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                {c.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.avatarUrl} alt="" className="size-11 rounded-full shrink-0 object-cover" />
+                ) : (
+                  <div
+                    className={`size-11 rounded-full shrink-0 flex items-center justify-center text-white font-semibold ${
+                      PLATFORM_COLORS[c.platform] ?? "bg-slate-400"
+                    }`}
+                  >
+                    {initial}
                   </div>
-                  <form action={addWithBrandId} className="shrink-0">
-                    <input type="hidden" name="channelId" value={ch.channelId} />
-                    <input type="hidden" name="title" value={ch.title} />
-                    <input type="hidden" name="customUrl" value={ch.customUrl ?? ""} />
-                    <input type="hidden" name="subscriberCount" value={ch.subscriberCount ?? ""} />
-                    <input type="hidden" name="videoCount" value={ch.videoCount ?? ""} />
-                    <input type="hidden" name="description" value={ch.description.slice(0, 500)} />
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 truncate">@{c.username}</span>
+                    <Badge color="neutral">{c.platform}</Badge>
+                    {c.kind === "yt" && <Badge color="blue">新規発見</Badge>}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {c.followers ? `フォロワー ${c.followers.toLocaleString()}` : "フォロワー数不明"} ・ 一致度 {c.score.toFixed(0)}
+                  </p>
+                </div>
+              </div>
+
+              {reason ? (
+                <p className="text-sm text-indigo-900 bg-indigo-50 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                  <Sparkles className="size-3.5 shrink-0 mt-0.5 text-indigo-500" />
+                  {reason}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  {c.genreTags ?? "ジャンル未設定"} ・ フォロワー推定層: {c.audienceAgeGuess ?? "-"} / {c.audienceGenderGuess ?? "-"}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600"
+                >
+                  <ExternalLink className="size-3.5" />
+                  {PLATFORM_VIEW_LABELS[c.platform] ?? "プロフィールを見る"}
+                </a>
+
+                {c.kind === "db" ? (
+                  alreadyAdded ? (
+                    <Link
+                      href={`/campaigns/${selectedCampaignId}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-md"
+                    >
+                      <Check className="size-3.5" /> 決定済み
+                    </Link>
+                  ) : selectedCampaignId ? (
+                    <form action={decideWithBrandId}>
+                      <input type="hidden" name="influencerId" value={c.influencerId} />
+                      <input type="hidden" name="campaignId" value={selectedCampaignId} />
+                      <SubmitButton size="sm" pendingText="処理中...">
+                        決定する
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <span className="text-xs text-slate-400">キャンペーン未選択</span>
+                  )
+                ) : (
+                  <form action={addYtWithBrandId}>
+                    <input type="hidden" name="channelId" value={c.channel!.channelId} />
+                    <input type="hidden" name="title" value={c.channel!.title} />
+                    <input type="hidden" name="customUrl" value={c.channel!.customUrl ?? ""} />
+                    <input type="hidden" name="subscriberCount" value={c.channel!.subscriberCount ?? ""} />
+                    <input type="hidden" name="videoCount" value={c.channel!.videoCount ?? ""} />
+                    <input type="hidden" name="description" value={c.channel!.description.slice(0, 500)} />
+                    <input type="hidden" name="thumbnailUrl" value={c.channel!.thumbnailUrl ?? ""} />
                     {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}
-                    <SubmitButton variant="secondary" size="sm">
-                      {selectedCampaignId ? "マスタ登録+候補追加" : "マスタに登録"}
+                    <SubmitButton size="sm" pendingText="処理中...">
+                      {selectedCampaignId ? "決定する" : "マスタに登録"}
                     </SubmitButton>
                   </form>
-                </Card>
-              );
-            })}
-          </div>
-        </>
-      )}
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
 
       {/* SNS探索(Claude for Chrome等でリサーチ) */}
       <SectionTitle>
@@ -442,7 +482,7 @@ export default async function DiscoverPage({
         </span>
       </SectionTitle>
       <p className="text-xs text-slate-500 mb-3">
-        TikTok/Instagramには自動検索APIが無いため、ブラウザ操作エージェント(Claude for Chrome等)にブラウザ上を巡回してもらい、候補をCSVで受け取ります(スクレイピングではなく、人間と同じ操作でブラウジングする想定です)。下のプロンプトをコピーして対象SNSを開いたブラウザのClaudeに実行させ、出てきたCSVを下の欄に貼り戻してください。
+        TikTok/Instagramには自動検索APIが無いため、ブラウザ操作エージェント(Claude for Chrome等)にブラウザ上を巡回してもらい、候補をCSVで受け取ります(スクレイピングではなく、人間と同じ操作でブラウジングする想定です)。下のプロンプトをコピーして対象SNSを開いたブラウザのClaudeに実行させ、出てきたCSVを下の欄に貼り戻してください。取り込んだ人は上の「おすすめの候補」に次の表示から反映されます。
       </p>
       <div className="flex gap-2 mb-3">
         {(["tiktok", "instagram"] as ResearchPlatform[]).map((p) => (

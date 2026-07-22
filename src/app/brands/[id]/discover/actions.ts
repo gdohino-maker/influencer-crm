@@ -15,7 +15,7 @@ async function readCsvSource(formData: FormData): Promise<string> {
   return stripBom(String(formData.get("csv") ?? ""));
 }
 
-// YouTube検索結果のチャンネルをインフルエンサーマスタに登録し、任意でキャンペーン候補にも追加する
+// YouTube検索結果のチャンネルをインフルエンサーマスタに登録し、任意でキャンペーン候補に追加してDM作成画面へ遷移する
 export async function addYoutubeCandidate(brandId: number, formData: FormData) {
   const channelId = String(formData.get("channelId") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
@@ -23,6 +23,7 @@ export async function addYoutubeCandidate(brandId: number, formData: FormData) {
   const subscriberCountRaw = String(formData.get("subscriberCount") ?? "").trim();
   const videoCountRaw = String(formData.get("videoCount") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const thumbnailUrl = String(formData.get("thumbnailUrl") ?? "").trim();
   const campaignIdRaw = String(formData.get("campaignId") ?? "").trim();
 
   if (!channelId) throw new Error("channelIdは必須です");
@@ -41,24 +42,27 @@ export async function addYoutubeCandidate(brandId: number, formData: FormData) {
         url: `https://www.youtube.com/channel/${channelId}`,
         displayName: title || null,
         bio: description || null,
+        avatarUrl: thumbnailUrl || null,
         followers: subscriberCountRaw ? Number(subscriberCountRaw) : null,
         postsCount: videoCountRaw ? Number(videoCountRaw) : null,
       },
     });
   }
 
-  if (campaignIdRaw) {
-    const campaignId = Number(campaignIdRaw);
-    const existing = await prisma.campaignInfluencer.findUnique({
-      where: { campaignId_influencerId: { campaignId, influencerId: influencer.id } },
-    });
-    if (!existing) {
-      await prisma.campaignInfluencer.create({ data: { campaignId, influencerId: influencer.id } });
-    }
-  }
-
   revalidatePath(`/brands/${brandId}/discover`);
   revalidatePath("/influencers");
+
+  if (campaignIdRaw) {
+    const campaignId = Number(campaignIdRaw);
+    let member = await prisma.campaignInfluencer.findUnique({
+      where: { campaignId_influencerId: { campaignId, influencerId: influencer.id } },
+    });
+    if (!member) {
+      member = await prisma.campaignInfluencer.create({ data: { campaignId, influencerId: influencer.id } });
+    }
+    revalidatePath(`/campaigns/${campaignId}`);
+    redirect(`/campaigns/${campaignId}/members/${member.id}`);
+  }
 }
 
 // Instagram/X/TikTokのプロフィールURLを貼るだけでマスタに簡易登録する(手動発掘の摩擦を下げるため)

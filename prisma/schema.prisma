@@ -118,6 +118,7 @@ model Influencer {
   url         String
   displayName String?
   bio         String?
+  avatarUrl   String?
 
   followers      Int?
   postsCount     Int?
