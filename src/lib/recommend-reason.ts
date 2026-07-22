@@ -1,5 +1,6 @@
 import type { Brand, Influencer } from "@prisma/client";
 import { generateJson } from "@/lib/gemini";
+import type { YoutubeChannelCandidate } from "@/lib/youtube";
 import { Type } from "@google/genai";
 
 // 上位候補まとめて1回のAPI呼び出しで「選定理由」を生成する(候補ごとに呼ぶとレイテンシ・コストが増えるため)
@@ -52,4 +53,57 @@ ${candidates
   });
 
   return new Map(result.reasons.map((r) => [r.influencerId, r.reason]));
+}
+
+// YouTube自動検索結果(マスタ未登録のまま)に対して選定理由を生成する。
+// channelIdをキーにしたMapを返す(候補はまだInfluencerレコードではないため)。
+export async function generateYoutubeReasons(
+  candidates: YoutubeChannelCandidate[],
+  brand: Pick<Brand, "name" | "category" | "targetAgeBands" | "targetGender" | "targetGenres" | "description">
+): Promise<Map<string, string>> {
+  if (candidates.length === 0) return new Map();
+
+  const prompt = `あなたはインフルエンサーマーケティングの担当者です。
+以下のブランドのターゲット条件と、YouTube検索で見つかったチャンネル一覧(実データ)を見て、それぞれについて「なぜこの人が合うと考えられるか」を1文(50字以内、日本語)で説明してください。
+
+厳守事項:
+- 与えられたデータ(チャンネル名・概要欄・登録者数・動画数)に書かれている具体的な内容だけを根拠にすること。データに無い雰囲気・実績を憶測で作り出さない
+- 抽象的な言い回しだけで終わらせず、根拠になったデータ(チャンネル名や概要欄の内容など)に具体的に触れること
+- 判断材料が薄い場合は、正直に「情報が少なく判断材料が限定的」と書く
+
+【ブランド】
+商品名: ${brand.name}
+カテゴリ: ${brand.category}
+ターゲット年齢層: ${brand.targetAgeBands}
+ターゲット性別: ${brand.targetGender}
+ターゲットジャンル: ${brand.targetGenres}
+商品説明: ${brand.description ?? "(なし)"}
+
+【チャンネル一覧(実データ)】
+${candidates
+  .map(
+    (c) =>
+      `- channelId:${c.channelId} 名前:${c.title} 概要欄:${c.description.slice(0, 150) || "不明"} 登録者数:${c.subscriberCount ?? "不明"} 動画数:${c.videoCount ?? "不明"}`
+  )
+  .join("\n")}`;
+
+  const result = await generateJson<{ reasons: { channelId: string; reason: string }[] }>(prompt, {
+    type: Type.OBJECT,
+    properties: {
+      reasons: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            channelId: { type: Type.STRING },
+            reason: { type: Type.STRING },
+          },
+          required: ["channelId", "reason"],
+        },
+      },
+    },
+    required: ["reasons"],
+  });
+
+  return new Map(result.reasons.map((r) => [r.channelId, r.reason]));
 }

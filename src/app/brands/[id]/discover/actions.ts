@@ -2,9 +2,18 @@
 
 import { prisma } from "@/lib/db";
 import { parseSocialUrl } from "@/lib/parse-social-url";
-import { parseInfluencerCsvRows } from "@/lib/csv-import";
+import { parseInfluencerCsvRows, stripBom } from "@/lib/csv-import";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+
+async function readCsvSource(formData: FormData): Promise<string> {
+  const file = formData.get("csvFile");
+  if (file instanceof File && file.size > 0) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    return stripBom(buffer.toString("utf-8"));
+  }
+  return stripBom(String(formData.get("csv") ?? ""));
+}
 
 // YouTube検索結果のチャンネルをインフルエンサーマスタに登録し、任意でキャンペーン候補にも追加する
 export async function addYoutubeCandidate(brandId: number, formData: FormData) {
@@ -94,11 +103,11 @@ export async function addQuickInfluencer(brandId: number, formData: FormData) {
 // Claude for Chrome等でSNS(TikTok/Instagram)をリサーチした結果のCSVを貼り付けて一括登録する(任意で選択中キャンペーンにも追加)
 export async function importSnsResearch(brandId: number, formData: FormData) {
   const platform = String(formData.get("platform") ?? "tiktok").trim();
-  const raw = String(formData.get("csv") ?? "").trim();
+  const raw = (await readCsvSource(formData)).trim();
   const campaignIdRaw = String(formData.get("campaignId") ?? "").trim();
   const qsCampaign = campaignIdRaw ? `&campaignId=${campaignIdRaw}` : "";
 
-  if (!raw) throw new Error("CSVを貼り付けてください");
+  if (!raw) throw new Error("CSVを貼り付けるか、ファイルをドロップしてください");
 
   const rows = parseInfluencerCsvRows(platform, raw);
   let created = 0;

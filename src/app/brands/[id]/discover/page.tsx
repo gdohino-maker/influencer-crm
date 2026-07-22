@@ -2,9 +2,10 @@ import { prisma } from "@/lib/db";
 import { Card, PageTitle, Badge, EmptyState, SectionTitle, Select, Input, Textarea } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { CopyButton } from "@/components/copy-button";
+import { CsvDropzone } from "@/components/csv-dropzone";
 import { searchChannelsCached, type YoutubeChannelCandidate } from "@/lib/youtube";
 import { recommendScore } from "@/lib/recommend";
-import { generateRecommendReasons } from "@/lib/recommend-reason";
+import { generateRecommendReasons, generateYoutubeReasons } from "@/lib/recommend-reason";
 import { buildSnsResearchPrompt, type ResearchPlatform } from "@/lib/tiktok-research-prompt";
 import {
   ArrowLeft,
@@ -45,7 +46,7 @@ export default async function DiscoverPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{
     campaignId?: string;
-    yt?: string;
+    yt?: string | string[];
     quickAdded?: string;
     quickError?: string;
     new?: string;
@@ -59,7 +60,7 @@ export default async function DiscoverPage({
   const brandId = Number(id);
   const sp = await searchParams;
   const selectedCampaignId = sp.campaignId ? Number(sp.campaignId) : undefined;
-  const ytKeyword = sp.yt?.trim();
+  const selectedYtKeywords = (Array.isArray(sp.yt) ? sp.yt : sp.yt ? [sp.yt] : []).map((k) => k.trim()).filter(Boolean);
   const isNew = sp.new === "1";
 
   const brand = await prisma.brand.findUnique({
@@ -104,17 +105,33 @@ export default async function DiscoverPage({
     }
   }
 
-  // --- YouTube自動検索(要APIキー) ---
+  // --- YouTube自動検索(要APIキー・複数キーワード選択可) ---
   let ytResults: YoutubeChannelCandidate[] = [];
   let ytFromCache = false;
   let ytError: string | null = null;
-  if (ytKeyword) {
+  if (selectedYtKeywords.length > 0) {
     try {
-      const r = await searchChannelsCached(ytKeyword);
-      ytResults = r.results;
-      ytFromCache = r.fromCache;
+      const seenChannelIds = new Set<string>();
+      for (const kw of selectedYtKeywords) {
+        const r = await searchChannelsCached(kw);
+        if (r.fromCache) ytFromCache = true;
+        for (const ch of r.results) {
+          if (seenChannelIds.has(ch.channelId)) continue;
+          seenChannelIds.add(ch.channelId);
+          ytResults.push(ch);
+        }
+      }
     } catch (e) {
       ytError = (e as Error).message;
+    }
+  }
+
+  let ytReasons = new Map<string, string>();
+  if (ytResults.length > 0) {
+    try {
+      ytReasons = await generateYoutubeReasons(ytResults.slice(0, 10), brand);
+    } catch {
+      // AI理由生成に失敗しても検索結果の表示は継続する
     }
   }
 
@@ -316,21 +333,28 @@ export default async function DiscoverPage({
         {keywords.length === 0 ? (
           <p className="text-sm text-slate-400">まだ探索キーワードがありません。上のボタンで生成してください。</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {keywords.map((kw) => (
-              <Link
-                key={kw}
-                href={`/brands/${brandId}/discover?${selectedCampaignId ? `campaignId=${selectedCampaignId}&` : ""}yt=${encodeURIComponent(kw)}`}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  kw === ytKeyword
-                    ? "bg-indigo-600 border-indigo-600 text-white"
-                    : "bg-white border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600"
-                }`}
-              >
-                {kw}
-              </Link>
-            ))}
-          </div>
+          <form method="get" className="space-y-3">
+            {selectedCampaignId && <input type="hidden" name="campaignId" value={selectedCampaignId} />}
+            <div className="flex flex-wrap gap-2">
+              {keywords.map((kw) => (
+                <label key={kw} className="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="yt"
+                    value={kw}
+                    defaultChecked={selectedYtKeywords.includes(kw)}
+                    className="peer hidden"
+                  />
+                  <span className="inline-block px-3 py-1.5 rounded-full text-xs font-medium border transition-colors bg-white border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600 peer-checked:bg-indigo-600 peer-checked:border-indigo-600 peer-checked:text-white">
+                    {kw}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <button className="px-4 py-2 rounded-md text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-500">
+              選択したキーワードで検索する(複数選択可)
+            </button>
+          </form>
         )}
       </Card>
 
@@ -347,14 +371,16 @@ export default async function DiscoverPage({
         </div>
       )}
 
-      {ytKeyword && !ytError && (
+      {selectedYtKeywords.length > 0 && !ytError && (
         <>
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="font-medium text-slate-700">「{ytKeyword}」の検索結果 ({ytResults.length}件)</h3>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <h3 className="font-medium text-slate-700">
+              「{selectedYtKeywords.join("」「")}」の検索結果 ({ytResults.length}件)
+            </h3>
             {ytFromCache && (
               <Badge color="yellow">
                 <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3" /> 24hキャッシュ
+                  <Clock className="size-3" /> 一部24hキャッシュ
                 </span>
               </Badge>
             )}
@@ -363,14 +389,15 @@ export default async function DiscoverPage({
           <div className="space-y-2 mb-6">
             {ytResults.map((ch) => {
               const addWithBrandId = addYoutubeCandidate.bind(null, brandId);
+              const reason = ytReasons.get(ch.channelId);
               return (
-                <Card key={ch.channelId} className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3">
+                <Card key={ch.channelId} className="flex items-center justify-between py-3 gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     {ch.thumbnailUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={ch.thumbnailUrl} alt="" className="size-10 rounded-full" />
+                      <img src={ch.thumbnailUrl} alt="" className="size-10 rounded-full shrink-0" />
                     )}
-                    <div>
+                    <div className="min-w-0">
                       <a
                         href={`https://www.youtube.com/channel/${ch.channelId}`}
                         target="_blank"
@@ -382,9 +409,14 @@ export default async function DiscoverPage({
                       <p className="text-xs text-slate-500 mt-0.5">
                         登録者数 {ch.subscriberCount?.toLocaleString() ?? "非公開"} ・ 動画数 {ch.videoCount ?? "-"}
                       </p>
+                      {reason && (
+                        <p className="text-xs text-indigo-900 bg-indigo-50 rounded px-2 py-1 mt-1.5 flex items-start gap-1">
+                          <Sparkles className="size-3 shrink-0 mt-0.5 text-indigo-500" /> {reason}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <form action={addWithBrandId}>
+                  <form action={addWithBrandId} className="shrink-0">
                     <input type="hidden" name="channelId" value={ch.channelId} />
                     <input type="hidden" name="title" value={ch.title} />
                     <input type="hidden" name="customUrl" value={ch.customUrl ?? ""} />
@@ -439,11 +471,10 @@ export default async function DiscoverPage({
           <p className="text-xs font-medium text-slate-500 mb-2">結果CSVを貼り戻す({researchPlatform === "tiktok" ? "TikTok" : "Instagram"})</p>
           <form action={importSnsWithBrandId} className="flex flex-col gap-3 h-full">
             <input type="hidden" name="platform" value={researchPlatform} />
-            <Textarea
-              name="csv"
-              required
-              rows={16}
-              className="text-xs font-mono flex-1"
+            <CsvDropzone
+              fileInputName="csvFile"
+              textareaName="csv"
+              rows={12}
               placeholder={
                 "username,url,displayName,followers,totalLikes,postsCount,avgView,avgLike,avgEngagement,avgComment,videoAvgScore,postFreqWeek,lastPublished,contact,notes\nkurashi_no_hibi,https://example.com/@kurashi_no_hibi,みどりの暮らし,84000,1200000,320,120000,4100,4600,180,7.5,4,2026-07-10,mail@example.com,暮らし系で世界観が良い"
               }
