@@ -113,21 +113,31 @@ export async function importSnsResearch(brandId: number, formData: FormData) {
 
   if (!raw) throw new Error("CSVを貼り付けるか、ファイルをドロップしてください");
 
+  const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+  if (!brand) throw new Error("ブランドが見つかりません");
+
   const rows = parseInfluencerCsvRows(platform, raw);
   let created = 0;
   let skipped = 0;
   let addedToCampaign = 0;
 
   for (const row of rows) {
+    // このリサーチはブランドの狙いに沿ったプロンプトで行われているため、CSVにジャンル欄が無い場合はブランドのターゲットジャンルを引き継ぐ
+    // (これが無いとYouTube側の候補だけがジャンル一致スコアを持ち、リサーチ経由の候補がおすすめ一覧から埋もれてしまう)
+    const genreTags = row.genreTags || brand.targetGenres || null;
+
     let influencer = await prisma.influencer.findUnique({
       where: { platform_username: { platform, username: row.username } },
     });
 
     if (!influencer) {
-      influencer = await prisma.influencer.create({ data: { platform, ...row } });
+      influencer = await prisma.influencer.create({ data: { platform, ...row, genreTags } });
       created++;
     } else {
       skipped++;
+      if (!influencer.genreTags && genreTags) {
+        influencer = await prisma.influencer.update({ where: { id: influencer.id }, data: { genreTags } });
+      }
     }
 
     if (campaignIdRaw) {
