@@ -148,7 +148,12 @@ export default async function InfluencersPage({
                 <td className="px-4 py-2 text-right text-slate-700">{inf.followers?.toLocaleString() ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.engagementRate ? `${inf.engagementRate}%` : "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.avgView?.toLocaleString() ?? "-"}</td>
-                <td className="px-4 py-2 text-slate-600">{inf.genreTags ?? "-"}</td>
+                <td
+                  className="px-4 py-2 text-slate-600 max-w-[220px] truncate"
+                  title={inf.genreTags ?? undefined}
+                >
+                  {inf.genreTags ?? "-"}
+                </td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.assignmentCount}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.avgReach?.toLocaleString() ?? "-"}</td>
                 <td className="px-4 py-2 text-right text-slate-700">{inf.ctaRate != null ? `${inf.ctaRate}%` : "-"}</td>
